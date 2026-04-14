@@ -1,0 +1,24 @@
+{
+  "bot": {
+    "enable": true
+  },
+  "scopes": {
+    "user": [
+      "im:message",
+      "im:message.send_as_user",
+      "contact:contact.base:readonly",
+      "contact:user.employee_id:readonly"
+    ],
+    "tenant": [
+      "im:message",
+      "contact:contact.base:readonly",
+      "contact:user.employee_id:readonly"
+    ]
+  },
+  "events": {
+    "items": {
+      "user": [],
+      "tenant": []
+    }
+  }
+}

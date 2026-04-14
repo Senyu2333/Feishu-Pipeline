@@ -1,0 +1,15 @@
+{
+  "name": "api-py",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "fastapi dev src/main.py",
+    "build": "echo 'No build step for Python'",
+    "start": "fastapi run src/main.py"
+  },
+  "dependencies": {
+    "fastapi": "^0.115.0",
+    "uvicorn": "^0.30.0",
+    "shared": "workspace:*"
+  }
+}

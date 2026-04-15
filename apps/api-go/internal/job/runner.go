@@ -20,6 +20,9 @@ type Runner struct {
 }
 
 func NewRunner(logger *log.Logger, handler PublishHandler) *Runner {
+	if logger == nil {
+		logger = log.Default()
+	}
 	return &Runner{
 		logger:  logger,
 		handler: handler,

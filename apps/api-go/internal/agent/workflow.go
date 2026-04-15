@@ -6,37 +6,37 @@ import (
 	"strings"
 	"time"
 
-	"feishu-pipeline/apps/api-go/internal/domain"
+	"feishu-pipeline/apps/api-go/internal/model"
+	agenttype "feishu-pipeline/apps/api-go/internal/type/agent"
+	"feishu-pipeline/apps/api-go/internal/utils"
 
 	"github.com/cloudwego/eino/compose"
 )
 
 type PublishInput struct {
-	Session      domain.SessionDetail
-	RoleMappings []domain.RoleMapping
-	Knowledge    []domain.KnowledgeSource
+	Session      *agenttype.SessionAggregate
+	RoleMappings []model.RoleMapping
+	Knowledge    []model.KnowledgeSource
 }
 
 type PublishOutput struct {
-	Requirement domain.Requirement
-	Tasks       []domain.Task
+	Requirement model.Requirement
+	Tasks       []model.Task
 }
 
-type Engine struct{}
+type Engine struct {
+	runnable compose.Runnable[*pipelineState, PublishOutput]
+}
 
 type pipelineState struct {
 	Input               PublishInput
 	Title               string
 	Summary             string
 	ReferencedKnowledge []string
-	Tasks               []domain.Task
+	Tasks               []model.Task
 }
 
-func NewEngine() *Engine {
-	return &Engine{}
-}
-
-func (e *Engine) Execute(ctx context.Context, input PublishInput) (PublishOutput, error) {
+func NewEngine() (*Engine, error) {
 	graph := compose.NewGraph[*pipelineState, PublishOutput]()
 
 	_ = graph.AddLambdaNode("normalize", compose.InvokableLambda(func(ctx context.Context, state *pipelineState) (*pipelineState, error) {
@@ -66,18 +66,22 @@ func (e *Engine) Execute(ctx context.Context, input PublishInput) (PublishOutput
 	_ = graph.AddEdge("docs", "summary")
 	_ = graph.AddEdge("summary", compose.END)
 
-	runnable, err := graph.Compile(ctx)
+	runnable, err := graph.Compile(context.Background())
 	if err != nil {
-		return PublishOutput{}, fmt.Errorf("compile eino graph: %w", err)
+		return nil, fmt.Errorf("compile eino graph: %w", err)
 	}
 
-	return runnable.Invoke(ctx, &pipelineState{Input: input})
+	return &Engine{runnable: runnable}, nil
+}
+
+func (e *Engine) Execute(ctx context.Context, input PublishInput) (PublishOutput, error) {
+	return e.runnable.Invoke(ctx, &pipelineState{Input: input})
 }
 
 func normalizeState(state *pipelineState) *pipelineState {
 	var productMessages []string
 	for _, message := range state.Input.Session.Messages {
-		if message.Role == domain.MessageUser {
+		if message.Role == model.MessageUser {
 			productMessages = append(productMessages, strings.TrimSpace(message.Content))
 		}
 	}
@@ -92,7 +96,7 @@ func normalizeState(state *pipelineState) *pipelineState {
 	}
 
 	state.Title = title
-	state.Summary = summarize(summary)
+	state.Summary = utils.Summarize(summary, 240)
 	return state
 }
 
@@ -104,7 +108,7 @@ func enrichKnowledge(state *pipelineState) *pipelineState {
 		body := strings.ToLower(source.Content)
 		if strings.Contains(content, title) || strings.Contains(body, "规范") || strings.Contains(body, "流程") {
 			if _, ok := seen[source.Title]; !ok {
-				state.ReferencedKnowledge = append(state.ReferencedKnowledge, fmt.Sprintf("%s：%s", source.Title, summarize(source.Content)))
+				state.ReferencedKnowledge = append(state.ReferencedKnowledge, fmt.Sprintf("%s：%s", source.Title, utils.Summarize(source.Content, 120)))
 				seen[source.Title] = struct{}{}
 			}
 		}
@@ -114,7 +118,7 @@ func enrichKnowledge(state *pipelineState) *pipelineState {
 			if idx >= 2 {
 				break
 			}
-			state.ReferencedKnowledge = append(state.ReferencedKnowledge, fmt.Sprintf("%s：%s", source.Title, summarize(source.Content)))
+			state.ReferencedKnowledge = append(state.ReferencedKnowledge, fmt.Sprintf("%s：%s", source.Title, utils.Summarize(source.Content, 120)))
 		}
 	}
 	return state
@@ -124,56 +128,53 @@ func splitTasks(state *pipelineState) *pipelineState {
 	now := time.Now().UTC()
 	lowerSummary := strings.ToLower(state.Summary)
 
-	state.Tasks = []domain.Task{
+	state.Tasks = []model.Task{
 		{
-			ID:          newTaskID("frontend"),
+			ID:          utils.NewID("frontend"),
 			SessionID:   state.Input.Session.Session.ID,
 			Title:       "前端交互与页面实现",
 			Description: "实现会话列表、聊天主界面、需求详情侧栏，并联调任务状态与发布结果展示。",
-			Type:        domain.TaskFrontend,
-			Status:      domain.TaskTodo,
+			Type:        model.TaskFrontend,
+			Status:      model.TaskTodo,
 			AcceptanceCriteria: []string{
 				"支持登录后查看需求会话列表",
 				"支持发送消息和查看 AI 回复",
 				"支持查看需求详情和任务状态",
 			},
 			Risks:     []string{"页面状态同步复杂", "接口加载与空态处理需要稳定"},
-			CreatedAt: now,
-			UpdatedAt: now,
+			BaseModel: model.BaseModel{CreatedAt: now, UpdatedAt: now},
 		},
 		{
-			ID:          newTaskID("backend"),
+			ID:          utils.NewID("backend"),
 			SessionID:   state.Input.Session.Session.ID,
 			Title:       "后端接口与交付流程实现",
 			Description: "实现会话、任务、发布、知识同步和飞书分发接口，保证需求发布后可进入后台工作流。",
-			Type:        domain.TaskBackend,
-			Status:      domain.TaskTodo,
+			Type:        model.TaskBackend,
+			Status:      model.TaskTodo,
 			AcceptanceCriteria: []string{
 				"提供会话与任务 REST API",
 				"发布需求后异步生成任务并持久化",
 				"支持任务状态更新与飞书同步",
 			},
 			Risks:     []string{"飞书接口配置缺失", "发布流程需要保证幂等"},
-			CreatedAt: now,
-			UpdatedAt: now,
+			BaseModel: model.BaseModel{CreatedAt: now, UpdatedAt: now},
 		},
 	}
 
 	if strings.Contains(lowerSummary, "联调") || strings.Contains(lowerSummary, "接口") || strings.Contains(lowerSummary, "验收") {
-		state.Tasks = append(state.Tasks, domain.Task{
-			ID:          newTaskID("shared"),
+		state.Tasks = append(state.Tasks, model.Task{
+			ID:          utils.NewID("shared"),
 			SessionID:   state.Input.Session.Session.ID,
 			Title:       "公共联调与验收准备",
 			Description: "整理验收标准、联调依赖和提测说明，确保前后端对齐交付口径。",
-			Type:        domain.TaskShared,
-			Status:      domain.TaskTodo,
+			Type:        model.TaskShared,
+			Status:      model.TaskTodo,
 			AcceptanceCriteria: []string{
 				"明确接口字段与状态流转",
 				"明确提测前置条件",
 			},
 			Risks:     []string{"需求变更导致验收口径漂移"},
-			CreatedAt: now,
-			UpdatedAt: now,
+			BaseModel: model.BaseModel{CreatedAt: now, UpdatedAt: now},
 		})
 	}
 
@@ -183,15 +184,15 @@ func splitTasks(state *pipelineState) *pipelineState {
 func assignOwners(state *pipelineState) *pipelineState {
 	for idx := range state.Tasks {
 		switch state.Tasks[idx].Type {
-		case domain.TaskFrontend:
-			state.Tasks[idx].AssigneeRole = domain.RoleFrontend
-			state.Tasks[idx].AssigneeName = resolveAssigneeName(domain.RoleFrontend, state.Input.RoleMappings)
-		case domain.TaskBackend:
-			state.Tasks[idx].AssigneeRole = domain.RoleBackend
-			state.Tasks[idx].AssigneeName = resolveAssigneeName(domain.RoleBackend, state.Input.RoleMappings)
+		case model.TaskFrontend:
+			state.Tasks[idx].AssigneeRole = model.RoleFrontend
+			state.Tasks[idx].AssigneeName = resolveAssigneeName(model.RoleFrontend, state.Input.RoleMappings)
+		case model.TaskBackend:
+			state.Tasks[idx].AssigneeRole = model.RoleBackend
+			state.Tasks[idx].AssigneeName = resolveAssigneeName(model.RoleBackend, state.Input.RoleMappings)
 		default:
-			state.Tasks[idx].AssigneeRole = domain.RoleProduct
-			state.Tasks[idx].AssigneeName = resolveAssigneeName(domain.RoleProduct, state.Input.RoleMappings)
+			state.Tasks[idx].AssigneeRole = model.RoleProduct
+			state.Tasks[idx].AssigneeName = resolveAssigneeName(model.RoleProduct, state.Input.RoleMappings)
 		}
 	}
 	return state
@@ -211,12 +212,12 @@ func writeTaskDocs(state *pipelineState) *pipelineState {
 }
 
 func composeOutput(state *pipelineState) PublishOutput {
-	requirement := domain.Requirement{
-		ID:                  newTaskID("req"),
+	requirement := model.Requirement{
+		ID:                  utils.NewID("req"),
 		SessionID:           state.Input.Session.Session.ID,
 		Title:               state.Title,
 		Summary:             state.Summary,
-		Status:              domain.SessionInDelivery,
+		Status:              model.SessionInDelivery,
 		DeliverySummary:     fmt.Sprintf("已拆解 %d 个任务，并为前后端负责人生成交付说明。", len(state.Tasks)),
 		ReferencedKnowledge: state.ReferencedKnowledge,
 		PublishedAt:         time.Now().UTC(),
@@ -228,38 +229,26 @@ func composeOutput(state *pipelineState) PublishOutput {
 	}
 }
 
-func resolveAssigneeName(role domain.Role, mappings []domain.RoleMapping) string {
+func resolveAssigneeName(role model.Role, mappings []model.RoleMapping) string {
 	for _, mapping := range mappings {
 		if mapping.Role == role {
 			switch role {
-			case domain.RoleFrontend:
+			case model.RoleFrontend:
 				return "前端负责人小红"
-			case domain.RoleBackend:
+			case model.RoleBackend:
 				return "后端负责人小李"
-			case domain.RoleProduct:
+			case model.RoleProduct:
 				return "产品经理小明"
 			}
 		}
 	}
 
 	switch role {
-	case domain.RoleFrontend:
+	case model.RoleFrontend:
 		return "前端负责人小红"
-	case domain.RoleBackend:
+	case model.RoleBackend:
 		return "后端负责人小李"
 	default:
 		return "产品经理小明"
 	}
-}
-
-func summarize(value string) string {
-	value = strings.TrimSpace(value)
-	if len(value) <= 240 {
-		return value
-	}
-	return value[:240] + "..."
-}
-
-func newTaskID(prefix string) string {
-	return fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
 }

@@ -22,18 +22,34 @@ const API_BASE = '/api'
 export default function TopNav({ showSearch }: { showSearch?: boolean }) {
   const [user, setUser] = useState<UserInfo | null>(null)
   const [loading, setLoading] = useState(true)
+  const [feishuEnabled, setFeishuEnabled] = useState(false)
 
   // 检查登录状态
   useEffect(() => {
     checkAuth()
+    checkFeishuConfig()
   }, [])
+
+  const checkFeishuConfig = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/auth/feishu/config`)
+      if (res.ok) {
+        const config = await res.json()
+        const data = config.data || config
+        setFeishuEnabled(data.enabled && !!data.appId)
+      }
+    } catch (e) {
+      setFeishuEnabled(false)
+    }
+  }
 
   const checkAuth = async () => {
     try {
       const res = await fetch(`${API_BASE}/me`)
       if (res.ok) {
-        const data = await res.json()
-        setUser(data)
+        const result = await res.json()
+        const userData = result.data || result
+        setUser(userData)
       } else if (res.status === 401 || res.status === 403) {
         // 未登录或无权限
         setUser(null)
@@ -45,12 +61,38 @@ export default function TopNav({ showSearch }: { showSearch?: boolean }) {
     }
   }
 
-  const handleLogin = () => {
-    // 跳转到飞书授权登录
-    window.location.href = `${API_BASE}/auth/feishu/login`
+  const handleLogin = async () => {
+    try {
+      // 获取飞书配置
+      const configRes = await fetch(`${API_BASE}/auth/feishu/config`)
+      if (!configRes.ok) {
+        message.error('获取飞书配置失败')
+        return
+      }
+      const config = await configRes.json()
+      const data = config.data || config
+      
+      if (!data.enabled || !data.appId) {
+        message.error('飞书登录未启用')
+        return
+      }
+
+      // 构建飞书授权 URL
+      const redirectUri = encodeURIComponent(window.location.origin + '/auth/callback')
+      const state = Math.random().toString(36).substring(7)
+      const feishuAuthUrl = `https://open.feishu.cn/open-apis/authen/v1/authorize?app_id=${data.appId}&redirect_uri=${redirectUri}&state=${state}`
+      
+      // 保存 state 用于后续验证
+      sessionStorage.setItem('feishu_auth_state', state)
+      
+      // 跳转到飞书授权
+      window.location.href = feishuAuthUrl
+    } catch (e) {
+      message.error('登录失败')
+    }
   }
 
-  // 用户下拉菜单（只显示信息，无登出）
+  // 用户下拉菜单
   const userMenuItems: MenuProps['items'] = [
     {
       key: 'name',
@@ -68,9 +110,26 @@ export default function TopNav({ showSearch }: { showSearch?: boolean }) {
       label: '个人设置',
       icon: <UserOutlined />,
     },
+    { type: 'divider' },
+    {
+      key: 'logout',
+      label: '退出登录',
+      icon: <LoginOutlined />,
+      danger: true,
+      onClick: async () => {
+        try {
+          await fetch(`${API_BASE}/auth/logout`, { method: 'POST', credentials: 'include' })
+        } catch (e) {
+          // 忽略错误
+        }
+        setUser(null)
+        message.success('已退出登录')
+      },
+    },
   ]
 
   const getInitials = (name: string) => {
+    if (!name) return '?'
     return name.slice(0, 2).toUpperCase()
   }
 

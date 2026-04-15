@@ -47,8 +47,9 @@ export default function TopNav({ showSearch }: { showSearch?: boolean }) {
     try {
       const res = await fetch(`${API_BASE}/me`)
       if (res.ok) {
-        const data = await res.json()
-        setUser(data)
+        const result = await res.json()
+        const userData = result.data || result
+        setUser(userData)
       } else if (res.status === 401 || res.status === 403) {
         // 未登录或无权限
         setUser(null)
@@ -112,6 +113,7 @@ export default function TopNav({ showSearch }: { showSearch?: boolean }) {
   ]
 
   const getInitials = (name: string) => {
+    if (!name) return '?'
     return name.slice(0, 2).toUpperCase()
   }
 

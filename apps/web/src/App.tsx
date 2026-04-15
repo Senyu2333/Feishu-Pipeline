@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   sessionStatusLabel,
   taskStatusLabel,
@@ -8,10 +8,16 @@ import {
   type TaskStatus,
   type UserDTO,
 } from 'shared'
+import { isFeishuWebApp, requestFeishuAuthCode } from './lib/feishu'
 
 type ApiEnvelope<T> = {
   data: T
   error?: string
+}
+
+type FeishuSSOConfigDTO = {
+  enabled: boolean
+  appId?: string
 }
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080'
@@ -19,7 +25,9 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080
 const TASK_STATUS_OPTIONS: TaskStatus[] = ['todo', 'in_progress', 'testing', 'done']
 
 function App() {
+  const hasBootstrappedRef = useRef(false)
   const [user, setUser] = useState<UserDTO | null>(null)
+  const [feishuConfig, setFeishuConfig] = useState<FeishuSSOConfigDTO | null>(null)
   const [sessions, setSessions] = useState<SessionSummaryDTO[]>([])
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
   const [selectedSession, setSelectedSession] = useState<SessionDetailDTO | null>(null)
@@ -32,15 +40,19 @@ function App() {
   const selectedTasks = selectedSession?.tasks ?? []
 
   const publishDisabled = useMemo(() => {
-    return !selectedSession || selectedSession.session.status !== 'draft'
-  }, [selectedSession])
+    return !user || !selectedSession || selectedSession.session.status !== 'draft'
+  }, [selectedSession, user])
 
   useEffect(() => {
+    if (hasBootstrappedRef.current) {
+      return
+    }
+    hasBootstrappedRef.current = true
     void bootstrap()
   }, [])
 
   useEffect(() => {
-    if (!selectedSessionId) {
+    if (!selectedSessionId || !user) {
       return
     }
 
@@ -54,7 +66,16 @@ function App() {
 
   async function bootstrap() {
     setLoading(true)
+    setError(null)
     try {
+      const config = await loadFeishuConfig()
+      setFeishuConfig(config)
+
+      const currentUser = await tryLoadMe()
+      if (!currentUser) {
+        await loginWithFeishu(config)
+      }
+
       await Promise.all([loadMe(), loadSessions(true)])
     } catch (err) {
       setError(toErrorMessage(err))
@@ -63,9 +84,27 @@ function App() {
     }
   }
 
+  async function loadFeishuConfig() {
+    const response = await apiFetch<FeishuSSOConfigDTO>('/api/auth/feishu/config')
+    return response.data
+  }
+
   async function loadMe() {
     const response = await apiFetch<UserDTO>('/api/me')
     setUser(response.data)
+    return response.data
+  }
+
+  async function tryLoadMe() {
+    try {
+      return await loadMe()
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setUser(null)
+        return null
+      }
+      throw err
+    }
   }
 
   async function loadSessions(selectFirst: boolean) {
@@ -87,8 +126,30 @@ function App() {
     setSelectedSession(response.data)
   }
 
+  async function loginWithFeishu(config: FeishuSSOConfigDTO | null = feishuConfig) {
+    if (!config?.enabled) {
+      throw new Error('后端尚未启用飞书网页应用免登配置。')
+    }
+    if (!config.appId) {
+      throw new Error('后端未返回可用的飞书 App ID。')
+    }
+    if (!isFeishuWebApp()) {
+      throw new Error('请在飞书网页应用内打开当前页面以完成免登。')
+    }
+
+    const code = await requestFeishuAuthCode(config.appId)
+    await apiFetch('/api/auth/feishu/sso/login', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    })
+  }
+
   async function handleCreateSession(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!user) {
+      setError('当前未登录，无法创建需求会话。')
+      return
+    }
     if (!title.trim() || !draftPrompt.trim()) {
       setError('请填写会话标题和需求草稿。')
       return
@@ -118,6 +179,10 @@ function App() {
 
   async function handleSendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!user) {
+      setError('当前未登录，无法发送消息。')
+      return
+    }
     if (!selectedSessionId || !chatInput.trim()) {
       return
     }
@@ -140,6 +205,10 @@ function App() {
   }
 
   async function handlePublish() {
+    if (!user) {
+      setError('当前未登录，无法发布需求。')
+      return
+    }
     if (!selectedSessionId) {
       return
     }
@@ -160,6 +229,10 @@ function App() {
   }
 
   async function handleTaskStatusChange(taskId: string, status: TaskStatus) {
+    if (!user) {
+      setError('当前未登录，无法更新任务状态。')
+      return
+    }
     setError(null)
     try {
       await apiFetch<TaskDTO>(`/api/tasks/${taskId}/status`, {
@@ -174,8 +247,38 @@ function App() {
     }
   }
 
-  function handleLogin() {
-    window.location.href = `${API_BASE_URL}/api/auth/feishu/login`
+  async function handleLogin() {
+    setLoading(true)
+    setError(null)
+    try {
+      const config = feishuConfig ?? (await loadFeishuConfig())
+      setFeishuConfig(config)
+      await loginWithFeishu(config)
+      await Promise.all([loadMe(), loadSessions(true)])
+    } catch (err) {
+      setError(toErrorMessage(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleLogout() {
+    setLoading(true)
+    setError(null)
+    try {
+      await apiFetch('/api/auth/logout', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      })
+      setUser(null)
+      setSessions([])
+      setSelectedSession(null)
+      setSelectedSessionId(null)
+    } catch (err) {
+      setError(toErrorMessage(err))
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -188,11 +291,18 @@ function App() {
         <div className="topbar-actions">
           <div className="user-card">
             <strong>{user?.name ?? '未登录用户'}</strong>
-            <span>{user ? `${user.role} · ${user.departments.join(' / ')}` : '请先登录飞书或使用本地演示身份'}</span>
+            <span>{user ? `${user.role} · ${user.departments.join(' / ')}` : '请在飞书网页应用内打开并完成免登'}</span>
           </div>
-          <button className="primary ghost" onClick={handleLogin} type="button">
-            飞书登录
-          </button>
+          {!user ? (
+            <button className="primary ghost" onClick={() => void handleLogin()} type="button" disabled={loading}>
+              飞书免登
+            </button>
+          ) : null}
+          {user ? (
+            <button className="primary ghost" onClick={() => void handleLogout()} type="button" disabled={loading}>
+              退出登录
+            </button>
+          ) : null}
           <button className="primary" disabled={publishDisabled || loading} onClick={handlePublish} type="button">
             发布需求
           </button>
@@ -201,6 +311,13 @@ function App() {
 
       {error ? <div className="banner error">{error}</div> : null}
       {loading ? <div className="banner info">正在同步数据，请稍候...</div> : null}
+      {!user && !loading ? (
+        <div className="banner info">
+          {feishuConfig?.enabled
+            ? '当前需要在飞书网页应用内完成免登后才能访问工作台。'
+            : '后端尚未启用飞书网页应用免登配置，请先配置 app_id / app_secret。'}
+        </div>
+      ) : null}
 
       <main className="layout-grid">
         <aside className="panel sidebar">
@@ -220,8 +337,9 @@ function App() {
                 rows={6}
                 value={draftPrompt}
                 onChange={(event) => setDraftPrompt(event.target.value)}
+                disabled={!user || loading}
               />
-              <button className="primary" type="submit">
+              <button className="primary" type="submit" disabled={!user || loading}>
                 创建草稿
               </button>
             </form>
@@ -281,9 +399,9 @@ function App() {
               rows={4}
               value={chatInput}
               onChange={(event) => setChatInput(event.target.value)}
-              disabled={!selectedSession}
+              disabled={!selectedSession || !user || loading}
             />
-            <button className="primary" type="submit" disabled={!selectedSession || loading}>
+            <button className="primary" type="submit" disabled={!selectedSession || !user || loading}>
               发送消息
             </button>
           </form>
@@ -386,11 +504,22 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<ApiEnvelop
     ...init,
   })
 
-  const payload = (await response.json()) as ApiEnvelope<T>
+  const payload = response.headers.get('content-type')?.includes('application/json')
+    ? ((await response.json()) as ApiEnvelope<T>)
+    : ({ error: await response.text() } as ApiEnvelope<T>)
   if (!response.ok) {
-    throw new Error(payload.error ?? '请求失败')
+    throw new ApiError(payload.error ?? '请求失败', response.status)
   }
   return payload
+}
+
+class ApiError extends Error {
+  status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.status = status
+  }
 }
 
 function toErrorMessage(error: unknown): string {

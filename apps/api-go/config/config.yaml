@@ -4,7 +4,11 @@ app:
   port: 8080
   mode: "debug"
   base_url: "http://localhost:8080"
+  frontend_url: "http://localhost:5173"
   session_cookie_name: "feishu_pipeline_session"
+  cookie_secure: false
+  cookie_same_site: "lax"
+  session_ttl_hours: 168
 
 database:
   path: "./data/requirement-delivery.db"
@@ -13,7 +17,8 @@ feishu:
   enabled: false
   app_id: ""
   app_secret: ""
-  redirect_url: "http://localhost:8080/api/auth/feishu/callback"
+  redirect_url: ""
+  open_base_url: "https://open.feishu.cn"
   bot_name: "需求交付机器人"
   receive_id_type: "open_id"
   bitable_app_token: ""

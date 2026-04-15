@@ -21,7 +21,11 @@ type AppConfig struct {
 	Port              int    `mapstructure:"port"`
 	Mode              string `mapstructure:"mode"`
 	BaseURL           string `mapstructure:"base_url"`
+	FrontendURL       string `mapstructure:"frontend_url"`
 	SessionCookieName string `mapstructure:"session_cookie_name"`
+	CookieSecure      bool   `mapstructure:"cookie_secure"`
+	CookieSameSite    string `mapstructure:"cookie_same_site"`
+	SessionTTLHours   int    `mapstructure:"session_ttl_hours"`
 }
 
 type DatabaseConfig struct {
@@ -33,6 +37,7 @@ type FeishuConfig struct {
 	AppID           string `mapstructure:"app_id"`
 	AppSecret       string `mapstructure:"app_secret"`
 	RedirectURL     string `mapstructure:"redirect_url"`
+	OpenBaseURL     string `mapstructure:"open_base_url"`
 	BotName         string `mapstructure:"bot_name"`
 	ReceiveIDType   string `mapstructure:"receive_id_type"`
 	BitableAppToken string `mapstructure:"bitable_app_token"`
@@ -68,11 +73,23 @@ func LoadConfig(configPath string) (*Config, error) {
 	if cfg.App.Name == "" {
 		cfg.App.Name = "requirement-delivery-api"
 	}
+	if cfg.App.FrontendURL == "" {
+		cfg.App.FrontendURL = "http://localhost:5173"
+	}
 	if cfg.App.SessionCookieName == "" {
 		cfg.App.SessionCookieName = "feishu_pipeline_session"
 	}
+	if cfg.App.CookieSameSite == "" {
+		cfg.App.CookieSameSite = "lax"
+	}
+	if cfg.App.SessionTTLHours <= 0 {
+		cfg.App.SessionTTLHours = 24 * 7
+	}
 	if cfg.Database.Path == "" {
 		cfg.Database.Path = "./data/requirement-delivery.db"
+	}
+	if cfg.Feishu.OpenBaseURL == "" {
+		cfg.Feishu.OpenBaseURL = "https://open.feishu.cn"
 	}
 	if cfg.Feishu.BotName == "" {
 		cfg.Feishu.BotName = "需求交付机器人"

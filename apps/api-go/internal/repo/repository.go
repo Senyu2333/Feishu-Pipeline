@@ -30,6 +30,12 @@ type PublishResult struct {
 	Deliveries  []model.MessageDelivery
 }
 
+type FeishuLoginState struct {
+	User       model.User
+	Credential model.FeishuCredential
+	Session    model.LoginSession
+}
+
 type Repository struct {
 	db *gorm.DB
 }
@@ -65,6 +71,8 @@ func (r *Repository) Close() error {
 func (r *Repository) AutoMigrate(ctx context.Context) error {
 	return r.db.WithContext(ctx).AutoMigrate(
 		&model.User{},
+		&model.FeishuCredential{},
+		&model.LoginSession{},
 		&model.Session{},
 		&model.Message{},
 		&model.Requirement{},
@@ -78,21 +86,6 @@ func (r *Repository) AutoMigrate(ctx context.Context) error {
 func (r *Repository) Seed(ctx context.Context) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var count int64
-		if err := tx.Model(&model.User{}).Count(&count).Error; err != nil {
-			return err
-		}
-		if count == 0 {
-			users := []model.User{
-				{ID: "u_product_demo", Name: "产品经理小明", Email: "product@example.com", Role: model.RoleProduct, Departments: []string{"产品部"}},
-				{ID: "u_frontend_demo", Name: "前端负责人小红", Email: "frontend@example.com", Role: model.RoleFrontend, Departments: []string{"前端部"}},
-				{ID: "u_backend_demo", Name: "后端负责人小李", Email: "backend@example.com", Role: model.RoleBackend, Departments: []string{"后端部"}},
-				{ID: "u_admin_demo", Name: "管理员小周", Email: "admin@example.com", Role: model.RoleAdmin, Departments: []string{"平台治理组"}},
-			}
-			if err := tx.Create(&users).Error; err != nil {
-				return err
-			}
-		}
-
 		if err := tx.Model(&model.RoleMapping{}).Count(&count).Error; err != nil {
 			return err
 		}
@@ -134,6 +127,45 @@ func (r *Repository) FindUserByID(ctx context.Context, userID string) (model.Use
 
 func (r *Repository) UpsertUser(ctx context.Context, user *model.User) error {
 	return r.db.WithContext(ctx).Save(user).Error
+}
+
+func (r *Repository) SaveFeishuLoginState(ctx context.Context, state *FeishuLoginState) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&state.User).Error; err != nil {
+			return err
+		}
+		if err := tx.Save(&state.Credential).Error; err != nil {
+			return err
+		}
+		if err := tx.Save(&state.Session).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func (r *Repository) FindCredentialByUserID(ctx context.Context, userID string) (model.FeishuCredential, error) {
+	var credential model.FeishuCredential
+	err := r.db.WithContext(ctx).First(&credential, "user_id = ?", userID).Error
+	return credential, err
+}
+
+func (r *Repository) SaveCredential(ctx context.Context, credential *model.FeishuCredential) error {
+	return r.db.WithContext(ctx).Save(credential).Error
+}
+
+func (r *Repository) FindLoginSessionByID(ctx context.Context, sessionID string) (model.LoginSession, error) {
+	var session model.LoginSession
+	err := r.db.WithContext(ctx).First(&session, "id = ?", sessionID).Error
+	return session, err
+}
+
+func (r *Repository) DeleteLoginSessionByID(ctx context.Context, sessionID string) error {
+	return r.db.WithContext(ctx).Delete(&model.LoginSession{}, "id = ?", sessionID).Error
+}
+
+func (r *Repository) DeleteExpiredLoginSessions(ctx context.Context, now time.Time) error {
+	return r.db.WithContext(ctx).Delete(&model.LoginSession{}, "expires_at <= ?", now).Error
 }
 
 func (r *Repository) ListSessions(ctx context.Context) ([]SessionSummary, error) {

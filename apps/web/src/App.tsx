@@ -1,62 +1,3 @@
-import { createRouter, RouterProvider } from '@tanstack/react-router'
-import { createRoute, createRootRoute } from '@tanstack/react-router'
-import Home from './pages/Home'
-import NewRequirement from './pages/NewRequirement'
-import Workflows from './pages/Workflows'
-import Monitoring from './pages/Monitoring'
-import Approvals from './pages/Approvals'
-import Delivery from './pages/Delivery'
-
-const rootRoute = createRootRoute()
-
-const indexRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/',
-  component: Home,
-})
-
-const newRequirementRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/new-requirement',
-  component: NewRequirement,
-})
-
-const workflowsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/workflows',
-  component: Workflows,
-})
-
-const monitoringRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/monitoring',
-  component: Monitoring,
-})
-
-const approvalsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/approvals',
-  component: Approvals,
-})
-
-const deliveryRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/delivery',
-  component: Delivery,
-})
-
-const routeTree = rootRoute.addChildren([indexRoute, newRequirementRoute, workflowsRoute, monitoringRoute, approvalsRoute, deliveryRoute])
-const router = createRouter({ routeTree })
-
-declare module '@tanstack/react-router' {
-  interface Register {
-    router: typeof router
-  }
-}
-
-function App() {
-  return <RouterProvider router={router} />
-}
 
 function TaskCard(props: { task: TaskDTO; onStatusChange: (taskId: string, status: TaskStatus) => Promise<void> }) {
   const { task, onStatusChange } = props
@@ -107,11 +48,22 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<ApiEnvelop
     ...init,
   })
 
-  const payload = (await response.json()) as ApiEnvelope<T>
+  const payload = response.headers.get('content-type')?.includes('application/json')
+    ? ((await response.json()) as ApiEnvelope<T>)
+    : ({ error: await response.text() } as ApiEnvelope<T>)
   if (!response.ok) {
-    throw new Error(payload.error ?? '请求失败')
+    throw new ApiError(payload.error ?? '请求失败', response.status)
   }
   return payload
+}
+
+class ApiError extends Error {
+  status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.status = status
+  }
 }
 
 function toErrorMessage(error: unknown): string {

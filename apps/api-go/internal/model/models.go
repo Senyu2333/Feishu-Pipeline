@@ -54,11 +54,35 @@ type BaseModel struct {
 
 type User struct {
 	ID           string   `gorm:"primaryKey;size:64"`
-	FeishuOpenID string   `gorm:"size:128"`
+	FeishuOpenID string   `gorm:"size:128;uniqueIndex"`
 	Name         string   `gorm:"size:128;not null"`
 	Email        string   `gorm:"size:128"`
 	Role         Role     `gorm:"size:32;not null"`
 	Departments  []string `gorm:"serializer:json"`
+	BaseModel
+}
+
+type FeishuCredential struct {
+	ID                    string    `gorm:"primaryKey;size:64"`
+	UserID                string    `gorm:"size:64;not null;uniqueIndex"`
+	User                  User      `gorm:"foreignKey:UserID;references:ID"`
+	OpenID                string    `gorm:"size:128;not null;uniqueIndex"`
+	UnionID               string    `gorm:"size:128"`
+	FeishuUserID          string    `gorm:"size:128"`
+	AccessToken           string    `gorm:"type:text;not null"`
+	RefreshToken          string    `gorm:"type:text;not null"`
+	AccessTokenExpiresAt  time.Time `gorm:"not null"`
+	RefreshTokenExpiresAt time.Time `gorm:"not null"`
+	LastLoginAt           time.Time `gorm:"not null"`
+	LastRefreshAt         time.Time
+	BaseModel
+}
+
+type LoginSession struct {
+	ID        string    `gorm:"primaryKey;size:128"`
+	UserID    string    `gorm:"size:64;not null;index"`
+	User      User      `gorm:"foreignKey:UserID;references:ID"`
+	ExpiresAt time.Time `gorm:"not null;index"`
 	BaseModel
 }
 

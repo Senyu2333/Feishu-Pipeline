@@ -4,9 +4,81 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Feishu Pipeline</title>
+    <title>AetherFlow AI - Feishu Pipeline</title>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght@20..48,100..700&display=swap" rel="stylesheet"/>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-surface-variant": "#414755",
+              "tertiary-container": "#c64f00",
+              "on-tertiary-fixed": "#351000",
+              "on-error": "#ffffff",
+              "inverse-surface": "#163440",
+              "tertiary-fixed": "#ffdbcc",
+              "secondary-container": "#a1befd",
+              "on-primary-fixed-variant": "#004493",
+              "error-container": "#ffdad6",
+              "primary-fixed": "#d8e2ff",
+              "error": "#ba1a1a",
+              "on-primary-fixed": "#001a41",
+              "surface-container-lowest": "#ffffff",
+              "surface-container-highest": "#c9e7f7",
+              "on-secondary-container": "#2d4c83",
+              "outline-variant": "#c1c6d7",
+              "surface-container-high": "#ceedfd",
+              primary: "#0058bc",
+              tertiary: "#9e3d00",
+              "primary-container": "#0070eb",
+              "primary-fixed-dim": "#adc6ff",
+              "surface-container-low": "#e6f6ff",
+              "on-primary-container": "#fefcff",
+              outline: "#717786",
+              "surface-variant": "#c9e7f7",
+              "surface-dim": "#c0dfee",
+              secondary: "#405e96",
+              "on-tertiary-fixed-variant": "#7c2e00",
+              "inverse-primary": "#adc6ff",
+              "on-surface": "#001f2a",
+              background: "#f4faff",
+              "on-primary": "#ffffff",
+              "surface-container": "#d9f2ff",
+              "on-secondary-fixed-variant": "#26467d",
+              "surface-bright": "#f4faff",
+              "inverse-on-surface": "#e0f4ff",
+              "on-secondary-fixed": "#001a41",
+              "tertiary-fixed-dim": "#ffb595",
+              "on-secondary": "#ffffff",
+              "secondary-fixed-dim": "#adc6ff",
+              surface: "#f4faff",
+              "on-tertiary": "#ffffff",
+              "on-tertiary-container": "#fffbff",
+              "on-error-container": "#93000a",
+              "on-background": "#001f2a",
+              "secondary-fixed": "#d8e2ff",
+              "surface-tint": "#005bc1"
+            },
+            borderRadius: {
+              DEFAULT: "0.25rem",
+              lg: "0.5rem",
+              xl: "0.75rem",
+              full: "9999px"
+            },
+            fontFamily: {
+              headline: ["Manrope"],
+              body: ["Inter"],
+              label: ["Inter"]
+            }
+          },
+        },
+      }
+    </script>
   </head>
-  <body>
+  <body class="bg-background text-on-surface overflow-hidden antialiased">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

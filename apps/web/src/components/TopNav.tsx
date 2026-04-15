@@ -92,7 +92,7 @@ export default function TopNav({ showSearch }: { showSearch?: boolean }) {
     }
   }
 
-  // 用户下拉菜单（只显示信息，无登出）
+  // 用户下拉菜单
   const userMenuItems: MenuProps['items'] = [
     {
       key: 'name',
@@ -109,6 +109,22 @@ export default function TopNav({ showSearch }: { showSearch?: boolean }) {
       key: 'profile',
       label: '个人设置',
       icon: <UserOutlined />,
+    },
+    { type: 'divider' },
+    {
+      key: 'logout',
+      label: '退出登录',
+      icon: <LoginOutlined />,
+      danger: true,
+      onClick: async () => {
+        try {
+          await fetch(`${API_BASE}/auth/logout`, { method: 'POST', credentials: 'include' })
+        } catch (e) {
+          // 忽略错误
+        }
+        setUser(null)
+        message.success('已退出登录')
+      },
     },
   ]
 

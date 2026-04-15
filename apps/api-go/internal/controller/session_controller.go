@@ -23,6 +23,11 @@ func NewSessionController(sessionService *service.SessionService, publishService
 	}
 }
 
+// ListSessions
+// @tags 会话
+// @summary 会话列表
+// @router /api/sessions [GET]
+// @produce application/json
 func (c *SessionController) ListSessions(ctx *gin.Context) {
 	items, err := c.sessionService.ListSessions(ctx.Request.Context())
 	if err != nil {
@@ -37,6 +42,13 @@ func (c *SessionController) ListSessions(ctx *gin.Context) {
 	writeSuccess(ctx, http.StatusOK, response)
 }
 
+// CreateSession
+// @tags 会话
+// @summary 创建会话
+// @router /api/sessions [POST]
+// @accept application/json
+// @produce application/json
+// @param req body sessiontype.CreateSessionRequest true "json入参"
 func (c *SessionController) CreateSession(ctx *gin.Context) {
 	var request sessiontype.CreateSessionRequest
 	if err := ctx.ShouldBindJSON(&request); err != nil {
@@ -52,6 +64,12 @@ func (c *SessionController) CreateSession(ctx *gin.Context) {
 	writeSuccess(ctx, http.StatusCreated, mapSessionDetail(detail))
 }
 
+// GetSession
+// @tags 会话
+// @summary 会话详情
+// @router /api/sessions/{sessionID} [GET]
+// @param sessionID path string true "会话ID"
+// @produce application/json
 func (c *SessionController) GetSession(ctx *gin.Context) {
 	detail, err := c.sessionService.GetSessionDetail(ctx.Request.Context(), ctx.Param("sessionID"))
 	if err != nil {
@@ -61,6 +79,14 @@ func (c *SessionController) GetSession(ctx *gin.Context) {
 	writeSuccess(ctx, http.StatusOK, mapSessionDetail(detail))
 }
 
+// AddMessage
+// @tags 会话
+// @summary 追加消息
+// @router /api/sessions/{sessionID}/messages [POST]
+// @accept application/json
+// @produce application/json
+// @param sessionID path string true "会话ID"
+// @param req body sessiontype.CreateMessageRequest true "json入参"
 func (c *SessionController) AddMessage(ctx *gin.Context) {
 	var request sessiontype.CreateMessageRequest
 	if err := ctx.ShouldBindJSON(&request); err != nil {
@@ -81,6 +107,12 @@ func (c *SessionController) AddMessage(ctx *gin.Context) {
 	writeSuccess(ctx, http.StatusCreated, mapSessionDetail(detail))
 }
 
+// Publish
+// @tags 会话
+// @summary 发布会话
+// @router /api/sessions/{sessionID}/publish [POST]
+// @produce application/json
+// @param sessionID path string true "会话ID"
 func (c *SessionController) Publish(ctx *gin.Context) {
 	if err := c.publishService.PublishSession(ctx.Request.Context(), currentUserID(ctx), ctx.Param("sessionID")); err != nil {
 		writeError(ctx, http.StatusBadRequest, err)

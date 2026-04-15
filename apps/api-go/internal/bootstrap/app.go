@@ -3,11 +3,13 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
 	"feishu-pipeline/apps/api-go/internal/agent"
 	"feishu-pipeline/apps/api-go/internal/controller"
+	"feishu-pipeline/apps/api-go/internal/external/ai"
 	"feishu-pipeline/apps/api-go/internal/external/feishu"
 	"feishu-pipeline/apps/api-go/internal/job"
 	"feishu-pipeline/apps/api-go/internal/repo"
@@ -35,21 +37,42 @@ func NewApplication(ctx context.Context, configPath string, version string) (*Ap
 		return nil, err
 	}
 
-	agentEngine, err := agent.NewEngine()
+	var aiClient ai.Client
+	if cfg.AI.Provider == "ark" && cfg.AI.Ark.APIKey != "" {
+		arkClient, err := ai.NewArkClient(ctx, ai.ArkConfig{
+			BaseURL:     cfg.AI.Ark.BaseURL,
+			Model:       cfg.AI.Ark.Model,
+			APIKey:      cfg.AI.Ark.APIKey,
+			Temperature: cfg.AI.Ark.Temperature,
+			MaxTokens:   cfg.AI.Ark.MaxTokens,
+			Timeout:     time.Duration(cfg.AI.Ark.TimeoutSec) * time.Second,
+		})
+		if err != nil {
+			return nil, err
+		}
+		aiClient = arkClient
+	} else {
+		log.Printf("ark ai disabled: provider=%s api_key_configured=%t", cfg.AI.Provider, cfg.AI.Ark.APIKey != "")
+	}
+
+	agentEngine, err := agent.NewEngine(aiClient)
 	if err != nil {
 		return nil, err
 	}
 	feishuClient := feishu.NewClient(feishu.Config{
-		Enabled:         cfg.Feishu.Enabled,
-		AppID:           cfg.Feishu.AppID,
-		AppSecret:       cfg.Feishu.AppSecret,
-		RedirectURL:     cfg.Feishu.RedirectURL,
-		OpenBaseURL:     cfg.Feishu.OpenBaseURL,
-		BotName:         cfg.Feishu.BotName,
-		ReceiveIDType:   cfg.Feishu.ReceiveIDType,
-		BitableAppToken: cfg.Feishu.BitableAppToken,
-		BitableTableID:  cfg.Feishu.BitableTableID,
-		BaseURL:         cfg.App.BaseURL,
+		Enabled:            cfg.Feishu.Enabled,
+		AppID:              cfg.Feishu.AppID,
+		AppSecret:          cfg.Feishu.AppSecret,
+		RedirectURL:        cfg.Feishu.RedirectURL,
+		OpenBaseURL:        cfg.Feishu.OpenBaseURL,
+		BotName:            cfg.Feishu.BotName,
+		ReceiveIDType:      cfg.Feishu.ReceiveIDType,
+		DocFolderToken:     cfg.Feishu.DocFolderToken,
+		BitableName:        cfg.Feishu.BitableName,
+		BitableFolderToken: cfg.Feishu.BitableFolderToken,
+		BitableAppToken:    cfg.Feishu.BitableAppToken,
+		BitableTableID:     cfg.Feishu.BitableTableID,
+		BaseURL:            cfg.App.BaseURL,
 	})
 
 	authService := service.NewAuthService(repository, feishuClient, time.Duration(cfg.App.SessionTTLHours)*time.Hour)

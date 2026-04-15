@@ -38,6 +38,14 @@ const (
 	TaskShared   TaskType = "shared"
 )
 
+type TaskPriority string
+
+const (
+	TaskPriorityHigh   TaskPriority = "high"
+	TaskPriorityMedium TaskPriority = "medium"
+	TaskPriorityLow    TaskPriority = "low"
+)
+
 type TaskStatus string
 
 const (
@@ -117,18 +125,28 @@ type Requirement struct {
 }
 
 type Task struct {
-	ID                 string     `gorm:"primaryKey;size:64"`
-	SessionID          string     `gorm:"size:64;not null;index"`
-	Title              string     `gorm:"size:255;not null"`
-	Description        string     `gorm:"type:text;not null"`
-	Type               TaskType   `gorm:"size:32;not null"`
-	Status             TaskStatus `gorm:"size:32;not null"`
-	AssigneeName       string     `gorm:"size:128;not null"`
-	AssigneeRole       Role       `gorm:"size:32;not null"`
-	AcceptanceCriteria []string   `gorm:"serializer:json"`
-	Risks              []string   `gorm:"serializer:json"`
-	DocURL             string     `gorm:"size:512"`
-	BitableRecordURL   string     `gorm:"size:512"`
+	ID                 string       `gorm:"primaryKey;size:64"`
+	SessionID          string       `gorm:"size:64;not null;index"`
+	Title              string       `gorm:"size:255;not null"`
+	Description        string       `gorm:"type:text;not null"`
+	Type               TaskType     `gorm:"size:32;not null"`
+	Status             TaskStatus   `gorm:"size:32;not null"`
+	AssigneeName       string       `gorm:"size:128;not null"`
+	AssigneeRole       Role         `gorm:"size:32;not null"`
+	AssigneeID         string       `gorm:"size:128"`
+	AssigneeIDType     string       `gorm:"size:32"`
+	Priority           TaskPriority `gorm:"size:32;not null;default:medium"`
+	EstimateDays       int          `gorm:"not null;default:1"`
+	PlannedStartAt     *time.Time
+	PlannedEndAt       *time.Time
+	NotifyContent      string   `gorm:"type:text"`
+	AcceptanceCriteria []string `gorm:"serializer:json"`
+	Risks              []string `gorm:"serializer:json"`
+	DocURL             string   `gorm:"size:512"`
+	BitableAppToken    string   `gorm:"size:128"`
+	BitableTableID     string   `gorm:"size:128"`
+	BitableRecordID    string   `gorm:"size:128"`
+	BitableRecordURL   string   `gorm:"size:512"`
 	BaseModel
 }
 
@@ -138,6 +156,16 @@ type RoleMapping struct {
 	Keyword     string   `gorm:"size:128;not null"`
 	Role        Role     `gorm:"size:32;not null"`
 	Departments []string `gorm:"serializer:json"`
+}
+
+type RoleOwner struct {
+	ID           string `gorm:"primaryKey;size:64"`
+	Role         Role   `gorm:"size:32;not null;uniqueIndex"`
+	OwnerName    string `gorm:"size:128;not null"`
+	FeishuID     string `gorm:"size:128"`
+	FeishuIDType string `gorm:"size:32"`
+	Enabled      bool   `gorm:"not null;default:false"`
+	BaseModel
 }
 
 type KnowledgeSource struct {

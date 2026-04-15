@@ -41,6 +41,8 @@ func New(deps Dependencies) *gin.Engine {
 	adminGroup := authenticated.Group("/admin")
 	adminGroup.Use(middleware.AdminOnly(deps.AuthService))
 	adminGroup.POST("/role-mappings", deps.AdminController.CreateRoleMapping)
+	adminGroup.GET("/role-owners", deps.AdminController.ListRoleOwners)
+	adminGroup.POST("/role-owners", deps.AdminController.SaveRoleOwner)
 	adminGroup.POST("/knowledge/sync", deps.AdminController.SyncKnowledge)
 
 	return engine

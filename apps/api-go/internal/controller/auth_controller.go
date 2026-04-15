@@ -30,6 +30,11 @@ func NewAuthController(authService *service.AuthService, cookieName string, cook
 	}
 }
 
+// FeishuConfig
+// @tags 认证
+// @summary 获取飞书 SSO 前端配置
+// @router /api/auth/feishu/config [GET]
+// @produce application/json
 func (c *AuthController) FeishuConfig(ctx *gin.Context) {
 	writeSuccess(ctx, http.StatusOK, authtype.FeishuSSOConfigResponse{
 		Enabled: c.authService.FeishuEnabled(),
@@ -37,6 +42,13 @@ func (c *AuthController) FeishuConfig(ctx *gin.Context) {
 	})
 }
 
+// SSOLogin
+// @tags 认证
+// @summary 飞书 SSO 登录
+// @router /api/auth/feishu/sso/login [POST]
+// @accept application/json
+// @produce application/json
+// @param req body authtype.FeishuSSOLoginRequest true "json入参"
 func (c *AuthController) SSOLogin(ctx *gin.Context) {
 	var request authtype.FeishuSSOLoginRequest
 	if err := ctx.ShouldBindJSON(&request); err != nil {
@@ -54,6 +66,11 @@ func (c *AuthController) SSOLogin(ctx *gin.Context) {
 	writeSuccess(ctx, http.StatusOK, authtype.NewLoginResponse(user))
 }
 
+// Logout
+// @tags 认证
+// @summary 登出
+// @router /api/auth/logout [POST]
+// @produce application/json
 func (c *AuthController) Logout(ctx *gin.Context) {
 	sessionID, _ := ctx.Cookie(c.cookieName)
 	if err := c.authService.Logout(ctx.Request.Context(), sessionID); err != nil {
@@ -64,6 +81,11 @@ func (c *AuthController) Logout(ctx *gin.Context) {
 	writeSuccess(ctx, http.StatusOK, map[string]string{"status": "logged_out"})
 }
 
+// Me
+// @tags 认证
+// @summary 当前登录用户信息
+// @router /api/me [GET]
+// @produce application/json
 func (c *AuthController) Me(ctx *gin.Context) {
 	user, err := c.authService.CurrentUser(ctx.Request.Context(), currentUserID(ctx))
 	if err != nil {

@@ -19,6 +19,14 @@ func (s *AdminService) SaveRoleMapping(ctx context.Context, mapping *model.RoleM
 	return s.repository.SaveRoleMapping(ctx, mapping)
 }
 
+func (s *AdminService) SaveRoleOwner(ctx context.Context, owner *model.RoleOwner) error {
+	return s.repository.SaveRoleOwner(ctx, owner)
+}
+
+func (s *AdminService) ListRoleOwners(ctx context.Context) ([]model.RoleOwner, error) {
+	return s.repository.ListRoleOwners(ctx)
+}
+
 func (s *AdminService) SyncKnowledgeSources(ctx context.Context, items []model.KnowledgeSource) error {
 	return s.repository.SaveKnowledgeSources(ctx, items)
 }

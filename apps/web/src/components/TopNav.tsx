@@ -75,50 +75,46 @@ export default function TopNav({ showSearch }: { showSearch?: boolean }) {
   }
 
   return (
-    <header className="top-nav">
-      <div className="top-nav-left">
-        <div className="logo">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-            <circle cx="12" cy="12" r="10" stroke="#0066ff" strokeWidth="2"/>
-            <path d="M12 6v6l4 2" stroke="#0066ff" strokeWidth="2" strokeLinecap="round"/>
-          </svg>
-          <span className="logo-text">AetherFlow AI</span>
+    <header className="fixed top-0 w-full flex justify-between items-center px-6 h-14 bg-[#f4faff]/80 backdrop-blur-xl z-50 border-b border-[#c1c6d7]/20">
+      <div className="flex items-center gap-8">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shadow-md">
+            <span className="material-symbols-filled text-white text-sm">cloud_done</span>
+          </div>
+          <span className="text-xl font-bold tracking-tight text-[#001f2a]">AetherFlow AI</span>
         </div>
-        <nav className="top-nav-links">
-          <a href="#" className="nav-link">Documents</a>
-          <a href="#" className="nav-link active">Workspaces</a>
-          <a href="#" className="nav-link">Templates</a>
+        <nav className="hidden md:flex items-center gap-6">
+          <a href="#" className="text-[#001f2a]/60 hover:text-primary text-sm font-medium transition-colors">Documents</a>
+          <a href="#" className="text-[#001f2a]/60 hover:text-primary text-sm font-medium transition-colors">Workspaces</a>
+          <a href="#" className="text-[#001f2a]/60 hover:text-primary text-sm font-medium transition-colors">Templates</a>
         </nav>
       </div>
-      <div className="top-nav-right">
+      <div className="flex items-center gap-3">
         {showSearch && (
           <Input
-            prefix={<SearchOutlined />}
+            prefix={<SearchOutlined className="text-on-surface-variant" />}
             placeholder="Search workflows..."
-            className="top-search"
-            style={{ width: 200, marginRight: 8 }}
+            className="!w-52 !bg-white/50 !border-0 !rounded-lg hover:!bg-white focus-within:!bg-white"
           />
         )}
         <Space>
-          <Badge dot>
-            <Button type="text" icon={<BellOutlined />} className="icon-btn" />
-          </Badge>
-          <Button type="text" icon={<QuestionCircleOutlined />} className="icon-btn" />
-          <Button type="text" icon={<SettingOutlined />} className="icon-btn" />
+          <button className="p-2 hover:bg-[#c9e7f7]/30 rounded-full transition-colors active:scale-95 duration-150">
+            <span className="material-symbols-outlined text-on-surface-variant">notifications</span>
+          </button>
+          <button className="p-2 hover:bg-[#c9e7f7]/30 rounded-full transition-colors active:scale-95 duration-150">
+            <span className="material-symbols-outlined text-on-surface-variant">help</span>
+          </button>
+          <button className="p-2 hover:bg-[#c9e7f7]/30 rounded-full transition-colors active:scale-95 duration-150">
+            <span className="material-symbols-outlined text-on-surface-variant">settings</span>
+          </button>
           
           {loading ? (
-            <Avatar size="small" style={{ background: '#d9d9d9' }}>
-              <span style={{ fontSize: 10 }}>...</span>
-            </Avatar>
+            <Avatar size="small" className="!bg-surface-variant">...</Avatar>
           ) : user ? (
             <Dropdown menu={{ items: userMenuItems }} trigger={['click']} placement="bottomRight">
-              <Avatar 
-                size="small" 
-                style={{ background: '#0066ff', cursor: 'pointer' }}
-                src={user.avatar}
-              >
-                {user.avatar ? null : getInitials(user.name)}
-              </Avatar>
+              <div className="ml-2 w-8 h-8 rounded-full bg-primary-container flex items-center justify-center text-white text-xs font-bold ring-2 ring-surface ring-offset-2 cursor-pointer">
+                {getInitials(user.name)}
+              </div>
             </Dropdown>
           ) : (
             <Button 
@@ -126,7 +122,7 @@ export default function TopNav({ showSearch }: { showSearch?: boolean }) {
               size="small" 
               icon={<LoginOutlined />}
               onClick={handleLogin}
-              style={{ borderRadius: 6 }}
+              className="!rounded-lg !font-semibold"
             >
               登录
             </Button>

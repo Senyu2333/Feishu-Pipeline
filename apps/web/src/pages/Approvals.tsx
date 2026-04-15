@@ -11,15 +11,11 @@ import {
   Space,
 } from 'antd'
 import {
-  MenuOutlined,
-  ZoomInOutlined,
-  ZoomOutOutlined,
   UserAddOutlined,
   FilePdfOutlined,
   CloseOutlined,
   EditOutlined,
   CheckCircleOutlined,
-  StarOutlined,
 } from '@ant-design/icons'
 
 const historyItems = [
@@ -46,149 +42,121 @@ const historyItems = [
 
 export default function Approvals() {
   return (
-    <div className="app-container">
+    <div className="min-h-screen bg-background">
       <TopNav />
-      <div className="main-layout">
-        <Sidebar />
-        <main className="page-content approvals-page">
-          {/* Header */}
-          <div className="approvals-header">
-            <div>
-              <div className="approvals-breadcrumb">
-                Approvals <span className="breadcrumb-sep">›</span>{' '}
-                <span className="breadcrumb-highlight">Requirement #AL-9042</span>
-              </div>
-              <h1 className="approvals-title">Manual Review & Approval</h1>
-              <p className="approvals-subtitle">
-                Review the AI-generated feasibility report for Project Alpha - Q4 Delivery
-              </p>
+      <Sidebar />
+      <main className="ml-64 mt-14 h-[calc(100vh-3.5rem)] overflow-y-auto p-6">
+        <div className="flex justify-between items-start mb-5">
+          <div>
+            <div className="text-sm text-on-surface-variant mb-1">
+              Approvals <span className="text-on-surface/30">›</span>{' '}
+              <span className="text-primary font-medium">Requirement #AL-9042</span>
             </div>
-            <Space>
-              <Button icon={<UserAddOutlined />} size="large">
-                Assign Reviewer
-              </Button>
-              <Button icon={<FilePdfOutlined />} size="large">
-                Export PDF
-              </Button>
-            </Space>
+            <h1 className="text-2xl font-bold text-on-surface m-0 mb-1">Manual Review & Approval</h1>
+            <p className="text-sm text-on-surface-variant m-0">
+              Review the AI-generated feasibility report for Project Alpha - Q4 Delivery
+            </p>
           </div>
+          <Space>
+            <Button icon={<UserAddOutlined />} size="large" className="!rounded-lg">
+              Assign Reviewer
+            </Button>
+            <Button icon={<FilePdfOutlined />} size="large" className="!rounded-lg">
+              Export PDF
+            </Button>
+          </Space>
+        </div>
 
-          {/* Content Grid */}
-          <div className="approvals-layout">
-            {/* Document Preview */}
-            <Card className="approvals-doc-card">
-              {/* Doc Toolbar */}
-              <div className="doc-toolbar">
-                <div className="doc-toolbar-left">
-                  <MenuOutlined style={{ color: '#5a6478' }} />
-                  <span className="doc-name">Feasibility_Report_v2.docx</span>
-                </div>
-                <div className="doc-toolbar-right">
-                  <ZoomOutOutlined style={{ color: '#5a6478', cursor: 'pointer' }} />
-                  <span className="doc-zoom">100%</span>
-                  <ZoomInOutlined style={{ color: '#5a6478', cursor: 'pointer' }} />
+        <div className="grid grid-cols-[1fr_360px] gap-5">
+          <Card className="!rounded-xl !shadow-sm">
+            <div className="flex items-center justify-between px-4 py-3 bg-surface-container-low border-b border-outline-variant">
+              <div className="flex items-center gap-3">
+                <span className="material-symbols-outlined text-on-surface-variant">menu</span>
+                <span className="text-sm font-medium text-on-surface">Feasibility_Report_v2.docx</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="material-symbols-outlined text-on-surface-variant cursor-pointer">zoom_out</span>
+                <span className="text-sm text-on-surface-variant min-w-12 text-center">100%</span>
+                <span className="material-symbols-outlined text-on-surface-variant cursor-pointer">zoom_in</span>
+              </div>
+            </div>
+            <div className="px-10 py-8">
+              <div className="flex items-center gap-4 mb-7">
+                <Avatar size={48} className="!bg-surface-container-high !text-primary" icon={<span className="material-symbols-outlined">star</span>} />
+                <div className="text-right flex-1">
+                  <div className="text-xs font-semibold text-gray-400 tracking-wide">GENERATED DOCUMENT</div>
+                  <div className="text-sm text-on-surface font-medium">ID: REQ-9042-ALPHA</div>
                 </div>
               </div>
 
-              {/* Doc Content */}
-              <div className="doc-content">
-                <div className="doc-meta-header">
-                  <Avatar
-                    size={48}
-                    style={{ background: '#e8f2fc', color: '#0066ff', borderRadius: 10 }}
-                    icon={<StarOutlined style={{ fontSize: 22 }} />}
-                  />
-                  <div className="doc-meta-info">
-                    <div className="doc-meta-label">GENERATED DOCUMENT</div>
-                    <div className="doc-meta-id">ID: REQ-9042-ALPHA</div>
-                  </div>
+              <h2 className="text-xl font-bold text-on-surface mt-6 mb-4">Abstract</h2>
+              <p className="text-sm text-on-surface-variant leading-relaxed mb-4">
+                This feasibility report outlines the necessary requirements for the integration of high-level LLM agents into the existing Project Alpha infrastructure.
+              </p>
+
+              <h2 className="text-xl font-bold text-on-surface mt-6 mb-4">Technical Specifications</h2>
+              <ul className="list-disc pl-5 mb-5 space-y-2 text-sm text-on-surface-variant">
+                <li>Integration with existing REST APIs through a secure gateway layer.</li>
+                <li>Implementation of vector database indexing for real-time retrieval.</li>
+                <li>Estimated GPU resource allocation: 400 TFLOPS across 8 clusters.</li>
+              </ul>
+
+              <div className="bg-surface-container-low rounded-xl p-5 my-5">
+                <div className="flex justify-between items-center mb-3">
+                  <span className="text-xs font-bold text-primary tracking-wide">AI CONFIDENCE SCORE</span>
+                  <span className="text-lg font-bold text-on-surface">92%</span>
                 </div>
-
-                <h2 className="doc-section-title">Abstract</h2>
-                <p className="doc-paragraph">
-                  This feasibility report outlines the necessary requirements for the integration of high-level LLM agents into the existing Project Alpha infrastructure. The proposed architecture leverages a decentralized node structure to minimize latency during peak processing hours.
-                </p>
-
-                <h2 className="doc-section-title">Technical Specifications</h2>
-                <ul className="doc-list">
-                  <li>Integration with existing REST APIs through a secure gateway layer.</li>
-                  <li>Implementation of vector database indexing for real-time retrieval.</li>
-                  <li>Estimated GPU resource allocation: 400 TFLOPS across 8 clusters.</li>
-                </ul>
-
-                <div className="doc-confidence-box">
-                  <div className="doc-confidence-header">
-                    <span className="doc-confidence-label">AI CONFIDENCE SCORE</span>
-                    <span className="doc-confidence-value">92%</span>
-                  </div>
-                  <Progress percent={92} strokeColor="#0066ff" trailColor="#dbe8f6" showInfo={false} />
-                </div>
-
-                <p className="doc-paragraph">
-                  Stakeholders are advised to review Section 4.2 regarding compliance and data sovereignty in international regions. The proposed solution adheres to GDPR and CCPA guidelines through localized data masking.
-                </p>
+                <Progress percent={92} strokeColor="#0066ff" trailColor="#dbe8f6" showInfo={false} />
               </div>
+            </div>
+          </Card>
+
+          <aside className="flex flex-col gap-4">
+            <Card className="!rounded-xl !shadow-sm" title="Review Action">
+              <div className="text-xs font-semibold text-on-surface-variant tracking-wide mb-2">COMMENT & FEEDBACK</div>
+              <Input.TextArea placeholder="Enter your detailed feedback here..." rows={4} className="!bg-surface-container-low !border-outline-variant !rounded-lg mb-3" />
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                <Button icon={<CloseOutlined />} className="!text-red-500 !border-red-200 !bg-red-50 !rounded-lg">
+                  Reject
+                </Button>
+                <Button icon={<EditOutlined />} className="!text-primary !border-primary/20 !bg-primary/5 !rounded-lg">
+                  Revision
+                </Button>
+              </div>
+              <Button type="primary" icon={<CheckCircleOutlined />} block className="!h-11 !rounded-xl !text-sm !font-semibold">
+                Approve Document
+              </Button>
             </Card>
 
-            {/* Right Sidebar */}
-            <aside className="approvals-sidebar">
-              {/* Review Action */}
-              <Card className="approvals-card" title="Review Action">
-                <div className="review-feedback-label">COMMENT & FEEDBACK</div>
-                <Input.TextArea
-                  placeholder="Enter your detailed feedback here..."
-                  rows={4}
-                  className="review-feedback-input"
-                />
-                <div className="review-actions">
-                  <Button icon={<CloseOutlined />} className="review-reject-btn">
-                    Reject
-                  </Button>
-                  <Button icon={<EditOutlined />} className="review-revision-btn">
-                    Revision
-                  </Button>
-                </div>
-                <Button type="primary" icon={<CheckCircleOutlined />} block className="review-approve-btn">
-                  Approve Document
-                </Button>
-              </Card>
+            <Card className="!rounded-xl !shadow-sm" title="Review History" extra={<Badge count="3 Events" className="!bg-surface-container-high !text-primary !font-medium" />}>
+              <Timeline className="pt-1" items={historyItems.map((item, idx) => ({
+                key: idx,
+                color: item.color,
+                children: (
+                  <div className="p-3 bg-surface-container-low rounded-lg">
+                    <div className="font-semibold text-sm text-on-surface">{item.title}</div>
+                    <div className="text-xs text-on-surface-variant mt-0.5">{item.time}</div>
+                    {item.alert ? (
+                      <div className="text-xs text-orange-700 bg-orange-50 border border-orange-200 p-2 rounded mt-2">{item.desc}</div>
+                    ) : (
+                      <div className="text-xs text-on-surface-variant bg-white p-2 rounded mt-2">{item.desc}</div>
+                    )}
+                  </div>
+                ),
+              }))} />
+            </Card>
 
-              {/* Review History */}
-              <Card
-                className="approvals-card"
-                title="Review History"
-                extra={<Badge count="3 Events" style={{ backgroundColor: '#e8f2fc', color: '#0066ff', fontWeight: 500 }} />}
-              >
-                <Timeline className="review-timeline">
-                  {historyItems.map((item, idx) => (
-                    <Timeline.Item key={idx} color={item.color}>
-                      <div className="timeline-item">
-                        <div className="timeline-title">{item.title}</div>
-                        <div className="timeline-time">{item.time}</div>
-                        {item.alert ? (
-                          <div className="timeline-alert">{item.desc}</div>
-                        ) : (
-                          <div className="timeline-desc">{item.desc}</div>
-                        )}
-                      </div>
-                    </Timeline.Item>
-                  ))}
-                </Timeline>
-              </Card>
-
-              {/* Current Reviewer */}
-              <div className="current-reviewer">
-                <Avatar size="small" style={{ background: '#0066ff' }}>A</Avatar>
-                <div>
-                  <div className="current-reviewer-label">Currently reviewing</div>
-                  <div className="current-reviewer-name">You (Admin)</div>
-                </div>
-                <Badge status="success" />
+            <div className="flex items-center gap-3 bg-white rounded-xl p-3 shadow-sm">
+              <Avatar size="small" className="!bg-primary">A</Avatar>
+              <div className="flex-1">
+                <div className="text-xs text-on-surface-variant">Currently reviewing</div>
+                <div className="text-sm font-semibold text-on-surface">You (Admin)</div>
               </div>
-            </aside>
-          </div>
-        </main>
-      </div>
+              <Badge status="success" />
+            </div>
+          </aside>
+        </div>
+      </main>
     </div>
   )
 }

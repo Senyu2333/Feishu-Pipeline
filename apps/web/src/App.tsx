@@ -116,11 +116,22 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<ApiEnvelop
     ...init,
   })
 
-  const payload = (await response.json()) as ApiEnvelope<T>
+  const payload = response.headers.get('content-type')?.includes('application/json')
+    ? ((await response.json()) as ApiEnvelope<T>)
+    : ({ error: await response.text() } as ApiEnvelope<T>)
   if (!response.ok) {
-    throw new Error(payload.error ?? '请求失败')
+    throw new ApiError(payload.error ?? '请求失败', response.status)
   }
   return payload
+}
+
+class ApiError extends Error {
+  status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.status = status
+  }
 }
 
 function toErrorMessage(error: unknown): string {

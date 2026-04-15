@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"feishu-pipeline/apps/api-go/internal/agent"
 	"feishu-pipeline/apps/api-go/internal/controller"
@@ -43,6 +44,7 @@ func NewApplication(ctx context.Context, configPath string, version string) (*Ap
 		AppID:           cfg.Feishu.AppID,
 		AppSecret:       cfg.Feishu.AppSecret,
 		RedirectURL:     cfg.Feishu.RedirectURL,
+		OpenBaseURL:     cfg.Feishu.OpenBaseURL,
 		BotName:         cfg.Feishu.BotName,
 		ReceiveIDType:   cfg.Feishu.ReceiveIDType,
 		BitableAppToken: cfg.Feishu.BitableAppToken,
@@ -50,7 +52,7 @@ func NewApplication(ctx context.Context, configPath string, version string) (*Ap
 		BaseURL:         cfg.App.BaseURL,
 	})
 
-	authService := service.NewAuthService(repository, feishuClient)
+	authService := service.NewAuthService(repository, feishuClient, time.Duration(cfg.App.SessionTTLHours)*time.Hour)
 	healthService := service.NewHealthService(cfg.App.Name, cfg.App.Version)
 	sessionService := service.NewSessionService(repository, authService)
 	taskService := service.NewTaskService(repository, feishuClient)
@@ -64,7 +66,7 @@ func NewApplication(ctx context.Context, configPath string, version string) (*Ap
 	engine := router.New(router.Dependencies{
 		CookieName:        cfg.App.SessionCookieName,
 		HealthController:  controller.NewHealthController(healthService),
-		AuthController:    controller.NewAuthController(authService, cfg.App.SessionCookieName),
+		AuthController:    controller.NewAuthController(authService, cfg.App.SessionCookieName, time.Duration(cfg.App.SessionTTLHours)*time.Hour, cfg.App.CookieSecure, cfg.App.CookieSameSite),
 		SessionController: controller.NewSessionController(sessionService, publishService),
 		TaskController:    controller.NewTaskController(taskService),
 		AdminController:   controller.NewAdminController(adminService),

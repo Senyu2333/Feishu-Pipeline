@@ -11,6 +11,19 @@ type UserResponse struct {
 	Departments  []string   `json:"departments"`
 }
 
+type FeishuSSOLoginRequest struct {
+	Code string `json:"code" binding:"required"`
+}
+
+type FeishuSSOConfigResponse struct {
+	Enabled bool   `json:"enabled"`
+	AppID   string `json:"appId,omitempty"`
+}
+
+type LoginResponse struct {
+	User UserResponse `json:"user"`
+}
+
 func NewUserResponse(user model.User) UserResponse {
 	return UserResponse{
 		ID:           user.ID,
@@ -19,5 +32,11 @@ func NewUserResponse(user model.User) UserResponse {
 		Email:        user.Email,
 		Role:         user.Role,
 		Departments:  user.Departments,
+	}
+}
+
+func NewLoginResponse(user model.User) LoginResponse {
+	return LoginResponse{
+		User: NewUserResponse(user),
 	}
 }

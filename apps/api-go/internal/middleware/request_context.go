@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"errors"
 	"net/http"
 
 	"feishu-pipeline/apps/api-go/internal/model"
@@ -17,7 +18,7 @@ func CORS() gin.HandlerFunc {
 			ctx.Writer.Header().Set("Access-Control-Allow-Origin", origin)
 		}
 		ctx.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-		ctx.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Demo-User")
+		ctx.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		ctx.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
 
 		if ctx.Request.Method == http.MethodOptions {
@@ -28,14 +29,19 @@ func CORS() gin.HandlerFunc {
 	}
 }
 
-func CurrentUser(cookieName string) gin.HandlerFunc {
+func CurrentUser(authService *service.AuthService, cookieName string) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		currentUserID := "u_product_demo"
+		currentUserID := ""
 		if cookieValue, err := ctx.Cookie(cookieName); err == nil && cookieValue != "" {
-			currentUserID = cookieValue
-		}
-		if headerValue := ctx.GetHeader("X-Demo-User"); headerValue != "" {
-			currentUserID = headerValue
+			resolvedUserID, resolveErr := authService.ResolveSessionUserID(ctx.Request.Context(), cookieValue)
+			switch {
+			case resolveErr == nil:
+				currentUserID = resolvedUserID
+			case errors.Is(resolveErr, service.ErrAuthenticationRequired):
+			default:
+				ctx.AbortWithStatusJSON(http.StatusInternalServerError, commontype.Envelope{Error: resolveErr.Error()})
+				return
+			}
 		}
 
 		ctx.Set(CurrentUserIDKey(), currentUserID)
@@ -43,10 +49,25 @@ func CurrentUser(cookieName string) gin.HandlerFunc {
 	}
 }
 
+func RequireAuth() gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		currentUserID, _ := ctx.Get(CurrentUserIDKey())
+		if userID, ok := currentUserID.(string); !ok || userID == "" {
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, commontype.Envelope{Error: service.ErrAuthenticationRequired.Error()})
+			return
+		}
+		ctx.Next()
+	}
+}
+
 func AdminOnly(authService *service.AuthService) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		currentUserID, _ := ctx.Get(CurrentUserIDKey())
-		user := authService.EnsureUser(ctx.Request.Context(), currentUserID.(string))
+		user, err := authService.CurrentUser(ctx.Request.Context(), currentUserID.(string))
+		if err != nil {
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, commontype.Envelope{Error: err.Error()})
+			return
+		}
 		if user.Role != model.RoleAdmin {
 			ctx.AbortWithStatusJSON(http.StatusForbidden, commontype.Envelope{Error: "admin permission required"})
 			return

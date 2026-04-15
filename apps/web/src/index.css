@@ -874,15 +874,480 @@ body {
   margin: 0;
 }
 
-/* ===== Workflows Page ===== */
+/* ===== Dify-style Workflow Editor ===== */
+.dify-layout {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* Toolbar */
+.dify-toolbar {
+  height: 56px;
+  background: #fff;
+  border-bottom: 1px solid #e8e8e8;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  gap: 16px;
+}
+
+.dify-toolbar .toolbar-left,
+.dify-toolbar .toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dify-toolbar .toolbar-center {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 24px;
+  background: #e8e8e8;
+  margin: 0 8px;
+}
+
+.zoom-display {
+  font-size: 13px;
+  color: #595959;
+  min-width: 48px;
+  text-align: center;
+  font-weight: 500;
+}
+
+/* Node Library */
+.node-library {
+  width: 240px;
+  background: #fff;
+  border-right: 1px solid #e8e8e8;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.library-header {
+  padding: 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #262626;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.library-tabs {
+  padding: 0 12px;
+}
+
+.library-tabs .ant-tabs-nav {
+  margin-bottom: 0;
+}
+
+.library-tabs .ant-tabs-tab {
+  padding: 8px 4px;
+  font-size: 12px;
+}
+
+.node-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.node-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 4px;
+}
+
+.node-item:hover {
+  background: #f5f5f5;
+}
+
+.node-item:active {
+  background: #e6e6e6;
+}
+
+.node-item .node-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.node-item .node-label {
+  flex: 1;
+  font-size: 13px;
+  color: #262626;
+  font-weight: 500;
+}
+
+.node-item .add-icon {
+  color: #bfbfbf;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.node-item:hover .add-icon {
+  opacity: 1;
+}
+
+.library-footer {
+  padding: 12px 16px;
+  border-top: 1px solid #f0f0f0;
+  text-align: center;
+}
+
+/* Canvas */
+.workflow-canvas {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #f7f8fa;
+}
+
+.workflow-canvas .x6-graph {
+  background: #f7f8fa !important;
+}
+
+/* Canvas Hint */
+.canvas-hint {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: #bfbfbf;
+  font-size: 14px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Context Menu */
+.context-menu-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 999;
+}
+
+.context-menu {
+  position: fixed;
+  background: #fff;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  min-width: 200px;
+  z-index: 1000;
+  overflow: hidden;
+  animation: contextMenuFadeIn 0.15s ease;
+}
+
+@keyframes contextMenuFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.context-menu-header {
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #262626;
+  border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.context-menu-items {
+  padding: 8px;
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.context-menu-item:hover {
+  background: #f5f5f5;
+}
+
+.context-menu-item .node-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+
+.context-menu-item .node-label {
+  font-size: 13px;
+  color: #262626;
+  font-weight: 500;
+}
+
+/* Minimap */
+.minimap {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  width: 160px;
+  height: 120px;
+  background: #fff;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  z-index: 10;
+  overflow: hidden;
+}
+
+.minimap-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: #8c8c8c;
+  padding: 8px 10px 4px;
+  letter-spacing: 0.5px;
+}\n
+.minimap-content {
+  position: relative;
+  height: calc(100% - 24px);
+  margin: 0 10px 10px;
+  background: #fafafa;
+  border-radius: 4px;
+}
+
+.minimap-node {
+  position: absolute;
+  width: 12px;
+  height: 8px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.minimap-node:hover {
+  transform: scale(1.3);
+}
+
+.minimap-node.active {
+  outline: 2px solid #fff;
+  box-shadow: 0 0 0 2px #000;
+}
+
+/* Properties Panel */
+.properties-panel {
+  width: 0;
+  background: #fff;
+  border-left: 1px solid #e8e8e8;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: width 0.3s ease;
+}
+
+.properties-panel.open {
+  width: 320px;
+}
+
+.properties-header {
+  padding: 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.properties-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  font-weight: 600;
+  color: #262626;
+}
+
+.properties-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.properties-section {
+  margin-bottom: 24px;
+}
+
+.section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #8c8c8c;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.form-item {
+  margin-bottom: 16px;
+}
+
+.form-item label {
+  display: block;
+  font-size: 12px;
+  color: #595959;
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.form-item .ant-input,
+.form-item .ant-input-textarea textarea {
+  background: #fafafa;
+  border-color: #d9d9d9;
+  border-radius: 6px;
+}
+
+.form-item .ant-input:focus,
+.form-item .ant-input-textarea textarea:focus {
+  background: #fff;
+  border-color: #0066ff;
+  box-shadow: 0 0 0 2px rgba(0, 102, 255, 0.1);
+}
+
+.condition-branches {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.condition-branches .branch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.condition-branches .branch.true {
+  background: #f6ffed;
+  border: 1px solid #b7eb8f;
+  color: #52c41a;
+}
+
+.condition-branches .branch.false {
+  background: #fff2e8;
+  border: 1px solid #ffbb96;
+  color: #fa8c16;
+}
+
+.properties-footer {
+  padding: 16px;
+  border-top: 1px solid #f0f0f0;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.properties-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  text-align: center;
+}
+
+.properties-empty p {
+  margin-top: 16px;
+  font-size: 14px;
+  color: #595959;
+  font-weight: 500;
+}
+
+.properties-empty span {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #8c8c8c;
+}
+
+/* Workflow Status Bar */
+.workflow-statusbar {
+  height: 32px;
+  background: #fff;
+  border-top: 1px solid #e8e8e8;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  font-size: 12px;
+  color: #8c8c8c;
+}
+
+/* Workflow node styles */
+.workflow-node {
+  cursor: pointer;
+  transition: box-shadow 0.2s;
+}
+
+.workflow-node:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.workflow-node.selected {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.node-running-indicator {
+  width: 8px;
+  height: 8px;
+  background: #52c41a;
+  border-radius: 50%;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(0.9); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* Workflow page base */
 .workflow-page {
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #f8fafc;
+  background: #f7f8fa;
 }
 
+/* ===== Old Workflow Styles (deprecated) ===== */
 .workflow-toolbar {
   height: 52px;
   background: #fff;
@@ -1553,6 +2018,57 @@ body {
 /* Workflow canvas */
 .workflow-canvas .x6-graph-grid {
   opacity: 0.5;
+}
+
+/* X6 节点样式优化 - 隐藏默认锚点方块 */
+.x6-node {
+  cursor: move !important;
+}
+
+.x6-node .x6-port {
+  display: none !important;
+}
+
+.x6-node .x6-port-stroke {
+  display: none !important;
+}
+
+.x6-node .x6-port-fill {
+  display: none !important;
+}
+
+/* 隐藏节点周围的白色方块（锚点） */
+.x6-graph .x6-node circle[port],
+.x6-graph .x6-node rect[port] {
+  visibility: hidden;
+}
+
+.x6-graph .x6-node .x6-port-circle,
+.x6-graph .x6-node .x6-port-rect {
+  display: none !important;
+}
+
+/* 隐藏 X6 默认的连接点 */
+.x6-port-looped,
+.x6-port-group {
+  display: none !important;
+}
+
+/* 隐藏 X6 内部 SVG 白色方块 */
+.x6-svg-background,
+.x6-graph-svg defs {
+  overflow: visible;
+}
+
+/* 隐藏连接时的预览方块 */
+.x6-edge-path {
+  pointer-events: none;
+}
+
+/* 节点选中时的样式优化 */
+.x6-node.x6-cell-selected .x6-node-body,
+.x6-node.x6-node-selected .x6-node-body {
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.12));
 }
 
 /* Metadata card */

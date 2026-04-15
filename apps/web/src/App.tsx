@@ -6,6 +6,7 @@ import Workflows from './pages/Workflows'
 import Monitoring from './pages/Monitoring'
 import Approvals from './pages/Approvals'
 import Delivery from './pages/Delivery'
+import AuthCallback from './pages/AuthCallback'
 import { TaskDTO, TaskStatus, ApiEnvelope, taskStatusLabel } from 'shared'
 
 const API_BASE_URL = '/api'
@@ -50,7 +51,13 @@ const deliveryRoute = createRoute({
   component: Delivery,
 })
 
-const routeTree = rootRoute.addChildren([indexRoute, newRequirementRoute, workflowsRoute, monitoringRoute, approvalsRoute, deliveryRoute])
+const authCallbackRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/auth/callback',
+  component: AuthCallback,
+})
+
+const routeTree = rootRoute.addChildren([indexRoute, newRequirementRoute, workflowsRoute, monitoringRoute, approvalsRoute, deliveryRoute, authCallbackRoute])
 const router = createRouter({ routeTree })
 
 declare module '@tanstack/react-router' {

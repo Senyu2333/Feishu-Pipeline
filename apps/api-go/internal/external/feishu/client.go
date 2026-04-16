@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -274,10 +275,14 @@ func (c *Client) GetUserInfo(ctx context.Context, userAccessToken string) (UserP
 	}, nil
 }
 
-func (c *Client) ListUserDepartments(ctx context.Context, userIdentifier string, userIDType string) ([]Department, error) {
+func (c *Client) ListUserDepartments(ctx context.Context, userAccessToken string, userIdentifier string, userIDType string) ([]Department, error) {
 	userIdentifier = strings.TrimSpace(userIdentifier)
 	if userIdentifier == "" {
 		return nil, errors.New("feishu user identifier is required")
+	}
+	userAccessToken = strings.TrimSpace(userAccessToken)
+	if userAccessToken == "" {
+		return nil, errors.New("feishu user_access_token is required")
 	}
 	if !c.Enabled() {
 		return nil, errors.New("feishu sso is not enabled")
@@ -286,11 +291,6 @@ func (c *Client) ListUserDepartments(ctx context.Context, userIdentifier string,
 	case "open_id", "union_id":
 	default:
 		userIDType = "user_id"
-	}
-
-	tenantAccessToken, err := c.GetTenantAccessToken(ctx)
-	if err != nil {
-		return nil, err
 	}
 
 	path := fmt.Sprintf("/open-apis/contact/v3/users/%s?user_id_type=%s&department_id_type=department_id&user_fields=department_path,department_ids,name,status,email,mobile", url.PathEscape(userIdentifier), url.QueryEscape(userIDType))
@@ -325,7 +325,7 @@ func (c *Client) ListUserDepartments(ctx context.Context, userIdentifier string,
 		} `json:"data"`
 	}
 
-	if err := c.doJSONWithToken(ctx, http.MethodGet, path, tenantAccessToken, nil, &response); err != nil {
+	if err := c.doJSONWithToken(ctx, http.MethodGet, path, userAccessToken, nil, &response); err != nil {
 		return nil, err
 	}
 	if response.Code != 0 {
@@ -335,6 +335,7 @@ func (c *Client) ListUserDepartments(ctx context.Context, userIdentifier string,
 	orderedDepartmentIDs := make([]string, 0, len(response.Data.User.DepartmentIDs))
 	seenDepartmentIDs := make(map[string]struct{}, len(response.Data.User.DepartmentIDs))
 	fromDepartmentPath := make(map[string]Department, len(response.Data.User.DepartmentPath))
+	orderedFromPath := make([]string, 0, len(response.Data.User.DepartmentPath))
 
 	for _, pathItem := range response.Data.User.DepartmentPath {
 		departmentID := strings.TrimSpace(pathItem.DepartmentID)
@@ -345,16 +346,23 @@ func (c *Client) ListUserDepartments(ctx context.Context, userIdentifier string,
 			continue
 		}
 		name := firstNonEmpty(
-			strings.TrimSpace(pathItem.DepartmentPath.PathName.I18nName.ZhCN),
-			strings.TrimSpace(pathItem.DepartmentPath.PathName.Name),
 			strings.TrimSpace(pathItem.DepartmentName.I18nName.ZhCN),
 			strings.TrimSpace(pathItem.DepartmentName.Name),
-			strings.TrimSpace(pathItem.DepartmentPath.PathName.I18nName.EnUS),
 			strings.TrimSpace(pathItem.DepartmentName.I18nName.EnUS),
+			strings.TrimSpace(pathItem.DepartmentPath.PathName.I18nName.ZhCN),
+			strings.TrimSpace(pathItem.DepartmentPath.PathName.Name),
+			strings.TrimSpace(pathItem.DepartmentPath.PathName.I18nName.EnUS),
 		)
+		if !isReadableDepartmentName(name) {
+			name = ""
+		}
 		fromDepartmentPath[departmentID] = Department{
 			DepartmentID: departmentID,
 			Name:         name,
+		}
+		if _, ok := seenDepartmentIDs[departmentID]; !ok {
+			seenDepartmentIDs[departmentID] = struct{}{}
+			orderedFromPath = append(orderedFromPath, departmentID)
 		}
 	}
 
@@ -370,27 +378,38 @@ func (c *Client) ListUserDepartments(ctx context.Context, userIdentifier string,
 		orderedDepartmentIDs = append(orderedDepartmentIDs, departmentID)
 	}
 
-	if len(orderedDepartmentIDs) == 0 && len(fromDepartmentPath) > 0 {
-		for departmentID := range fromDepartmentPath {
-			orderedDepartmentIDs = append(orderedDepartmentIDs, departmentID)
-		}
+	if len(orderedDepartmentIDs) == 0 && len(orderedFromPath) > 0 {
+		orderedDepartmentIDs = append(orderedDepartmentIDs, orderedFromPath...)
 	}
 
 	if len(orderedDepartmentIDs) == 0 {
 		return nil, nil
 	}
 
-	batchDetails, err := c.batchGetDepartmentDetails(ctx, tenantAccessToken, orderedDepartmentIDs)
-	if err != nil {
-		// 若 batch 接口字段权限未生效，保留从 department_path 提取的名称继续返回。
-		batchDetails = map[string]Department{}
+	batchDetails := map[string]Department{}
+	// 优先使用 department_path 中的中文名称；名称缺失时再回退批量查询部门详情。
+	needBatchLookup := len(fromDepartmentPath) == 0
+	if !needBatchLookup {
+		for _, departmentID := range orderedDepartmentIDs {
+			if !isReadableDepartmentName(fromDepartmentPath[departmentID].Name) {
+				needBatchLookup = true
+				break
+			}
+		}
+	}
+	if needBatchLookup {
+		if tenantAccessToken, err := c.GetTenantAccessToken(ctx); err == nil {
+			if details, detailErr := c.batchGetDepartmentDetails(ctx, tenantAccessToken, orderedDepartmentIDs); detailErr == nil {
+				batchDetails = details
+			}
+		}
 	}
 
 	departments := make([]Department, 0, len(orderedDepartmentIDs))
 	for _, departmentID := range orderedDepartmentIDs {
 		department := batchDetails[departmentID]
 		if fromPath, ok := fromDepartmentPath[departmentID]; ok {
-			if department.Name == "" {
+			if !isReadableDepartmentName(department.Name) {
 				department.Name = fromPath.Name
 			}
 			if department.OpenDepartmentID == "" {
@@ -400,8 +419,11 @@ func (c *Client) ListUserDepartments(ctx context.Context, userIdentifier string,
 		department.DepartmentID = departmentID
 		department.Name = strings.TrimSpace(department.Name)
 		department.NameEN = strings.TrimSpace(department.NameEN)
-		if department.Name == "" {
-			department.Name = departmentID
+		if !isReadableDepartmentName(department.Name) {
+			department.Name = strings.TrimSpace(department.NameEN)
+		}
+		if !isReadableDepartmentName(department.Name) {
+			continue
 		}
 		departments = append(departments, department)
 	}
@@ -417,6 +439,41 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func isReadableDepartmentName(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false
+	}
+	return !looksLikeDepartmentID(value)
+}
+
+func looksLikeDepartmentID(value string) bool {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return false
+	}
+
+	odPattern := regexp.MustCompile(`^od-[a-z0-9]{8,}$`)
+	rawPattern := regexp.MustCompile(`^[a-z0-9]{12,}$`)
+	if odPattern.MatchString(value) {
+		return true
+	}
+	if rawPattern.MatchString(value) {
+		hasDigit := false
+		hasLetter := false
+		for _, r := range value {
+			if r >= '0' && r <= '9' {
+				hasDigit = true
+			}
+			if r >= 'a' && r <= 'z' {
+				hasLetter = true
+			}
+		}
+		return hasDigit && hasLetter
+	}
+	return false
 }
 
 func (c *Client) CreateTaskDoc(ctx context.Context, sessionTitle string, task model.Task) (string, error) {
@@ -452,7 +509,89 @@ func (c *Client) CreateTaskDoc(ctx context.Context, sessionTitle string, task mo
 		return "", errors.New("feishu document id is empty")
 	}
 
+	if err := c.appendDocumentContent(ctx, appAccessToken, response.Data.Document.DocumentID, task.Description); err != nil {
+		return "", fmt.Errorf("append doc content failed: %w", err)
+	}
+
 	return fmt.Sprintf("https://feishu.cn/docx/%s", url.PathEscape(response.Data.Document.DocumentID)), nil
+}
+
+func (c *Client) appendDocumentContent(ctx context.Context, appAccessToken string, documentID string, markdownContent string) error {
+	documentID = strings.TrimSpace(documentID)
+	if documentID == "" {
+		return errors.New("document id is required")
+	}
+
+	children := buildDocParagraphBlocks(markdownContent)
+	if len(children) == 0 {
+		return nil
+	}
+
+	for _, group := range chunkParagraphBlocks(children, 20) {
+		var response struct {
+			Code int    `json:"code"`
+			Msg  string `json:"msg"`
+		}
+		path := fmt.Sprintf("/open-apis/docx/v1/documents/%s/blocks/%s/children", url.PathEscape(documentID), url.PathEscape(documentID))
+		if err := c.doJSONWithToken(ctx, http.MethodPost, path, appAccessToken, map[string]any{
+			"children": group,
+		}, &response); err != nil {
+			return err
+		}
+		if response.Code != 0 {
+			return fmt.Errorf("append doc blocks failed: %s", response.Msg)
+		}
+	}
+	return nil
+}
+
+func buildDocParagraphBlocks(markdownContent string) []map[string]any {
+	lines := strings.Split(strings.ReplaceAll(markdownContent, "\r\n", "\n"), "\n")
+	children := make([]map[string]any, 0, len(lines))
+	for _, raw := range lines {
+		content := strings.TrimSpace(raw)
+		if content == "" {
+			continue
+		}
+		content = strings.TrimLeft(content, "#")
+		content = strings.TrimSpace(content)
+		if content == "" {
+			continue
+		}
+		children = append(children, map[string]any{
+			"block_type": 2,
+			"text": map[string]any{
+				"elements": []map[string]any{
+					{
+						"text_run": map[string]any{
+							"content":            content,
+							"text_element_style": map[string]any{},
+						},
+					},
+				},
+				"style": map[string]any{},
+			},
+		})
+	}
+	return children
+}
+
+func chunkParagraphBlocks(items []map[string]any, size int) [][]map[string]any {
+	if size <= 0 {
+		return [][]map[string]any{items}
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	chunks := make([][]map[string]any, 0, (len(items)+size-1)/size)
+	for start := 0; start < len(items); start += size {
+		end := start + size
+		if end > len(items) {
+			end = len(items)
+		}
+		chunks = append(chunks, items[start:end])
+	}
+	return chunks
 }
 
 func (c *Client) UpsertTaskRecord(ctx context.Context, task model.Task) (TaskRecordResult, error) {

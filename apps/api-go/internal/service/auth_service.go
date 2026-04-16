@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"regexp"
 	"strings"
 	"time"
 
@@ -50,7 +51,7 @@ func (s *AuthService) LoginByCode(ctx context.Context, code string) (model.User,
 	}
 
 	user := mapProfileToUser(profile)
-	departments, classifyErr := s.resolveDepartments(ctx, profile)
+	departments, classifyErr := s.resolveDepartments(ctx, token.AccessToken, profile)
 	if classifyErr == nil {
 		user.Departments = departments
 		user.Role = classifyRoleByDepartments(departments)
@@ -188,7 +189,7 @@ func mapProfileToUser(profile feishu.UserProfile) model.User {
 	}
 }
 
-func (s *AuthService) resolveDepartments(ctx context.Context, profile feishu.UserProfile) ([]string, error) {
+func (s *AuthService) resolveDepartments(ctx context.Context, userAccessToken string, profile feishu.UserProfile) ([]string, error) {
 	userIdentifier := strings.TrimSpace(profile.FeishuUserID)
 	userIDType := "user_id"
 	if userIdentifier == "" {
@@ -199,7 +200,7 @@ func (s *AuthService) resolveDepartments(ctx context.Context, profile feishu.Use
 		return []string{"其他"}, errors.New("feishu user identifier is empty")
 	}
 
-	items, err := s.feishuClient.ListUserDepartments(ctx, userIdentifier, userIDType)
+	items, err := s.feishuClient.ListUserDepartments(ctx, userAccessToken, userIdentifier, userIDType)
 	if err != nil {
 		return []string{"其他"}, err
 	}
@@ -213,6 +214,9 @@ func (s *AuthService) resolveDepartments(ctx context.Context, profile feishu.Use
 		name := strings.TrimSpace(item.Name)
 		if name == "" {
 			name = strings.TrimSpace(item.NameEN)
+		}
+		if isLikelyDepartmentCode(name) {
+			continue
 		}
 		if name == "" {
 			continue
@@ -256,4 +260,31 @@ func classifyRoleByDepartments(departments []string) model.Role {
 
 func normalizeDepartmentName(value string) string {
 	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(value), " ", ""))
+}
+
+func isLikelyDepartmentCode(value string) bool {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return false
+	}
+
+	odPattern := regexp.MustCompile(`^od-[a-z0-9]{8,}$`)
+	rawPattern := regexp.MustCompile(`^[a-z0-9]{12,}$`)
+	if odPattern.MatchString(value) {
+		return true
+	}
+	if rawPattern.MatchString(value) {
+		hasDigit := false
+		hasLetter := false
+		for _, r := range value {
+			if r >= '0' && r <= '9' {
+				hasDigit = true
+			}
+			if r >= 'a' && r <= 'z' {
+				hasLetter = true
+			}
+		}
+		return hasDigit && hasLetter
+	}
+	return false
 }

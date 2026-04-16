@@ -2,8 +2,11 @@ package service
 
 import (
 	"context"
+	"log"
 	"strings"
 
+	"feishu-pipeline/apps/api-go/internal/agent"
+	"feishu-pipeline/apps/api-go/internal/external/ai"
 	"feishu-pipeline/apps/api-go/internal/model"
 	"feishu-pipeline/apps/api-go/internal/repo"
 	"feishu-pipeline/apps/api-go/internal/utils"
@@ -17,12 +20,14 @@ type SessionService struct {
 	repository  *repo.Repository
 	authService *AuthService
 	publisher   SessionPublisher
+	aiClient    ai.Client
 }
 
-func NewSessionService(repository *repo.Repository, authService *AuthService) *SessionService {
+func NewSessionService(repository *repo.Repository, authService *AuthService, aiClient ai.Client) *SessionService {
 	return &SessionService{
 		repository:  repository,
 		authService: authService,
+		aiClient:    aiClient,
 	}
 }
 
@@ -48,7 +53,9 @@ func (s *SessionService) CreateSession(ctx context.Context, userID string, title
 	if _, err := s.repository.AddMessage(ctx, session.ID, model.MessageUser, prompt); err != nil {
 		return nil, err
 	}
-	if _, err := s.repository.AddMessage(ctx, session.ID, model.MessageAssistant, draftAssistantReply(prompt)); err != nil {
+
+	reply := s.generateChatReply(ctx, session.ID, nil, prompt)
+	if _, err := s.repository.AddMessage(ctx, session.ID, model.MessageAssistant, reply); err != nil {
 		return nil, err
 	}
 	return s.repository.GetSessionAggregate(ctx, session.ID)
@@ -84,6 +91,7 @@ func (s *SessionService) AddMessage(ctx context.Context, userID string, sessionI
 		return err
 	}
 
+	// 发布意图处理
 	if isPublishIntent(content) {
 		if aggregate.Session.Status == model.SessionDraft {
 			if user.Role == model.RoleProduct || user.Role == model.RoleAdmin {
@@ -102,14 +110,133 @@ func (s *SessionService) AddMessage(ctx context.Context, userID string, sessionI
 		}
 	}
 
-	reply := draftAssistantReply(content)
+	// 已发布需求 / 进行中状态：降级为固定回复，避免 AI 误改任务结果
 	if aggregate.Requirement != nil {
-		reply = publishedAssistantReply(content, aggregate.Requirement.Summary)
-	} else if aggregate.Session.Status != model.SessionDraft {
-		reply = publishInProgressReply(content)
+		reply := publishedAssistantReply(content, aggregate.Requirement.Summary)
+		_, err = s.repository.AddMessage(ctx, sessionID, model.MessageAssistant, reply)
+		return err
 	}
+	if aggregate.Session.Status != model.SessionDraft {
+		reply := publishInProgressReply(content)
+		_, err = s.repository.AddMessage(ctx, sessionID, model.MessageAssistant, reply)
+		return err
+	}
+
+	// 草稿阶段：调用 AI 正常对话
+	reply := s.generateChatReply(ctx, sessionID, aggregate.Messages, content)
 	_, err = s.repository.AddMessage(ctx, sessionID, model.MessageAssistant, reply)
 	return err
+}
+
+// generateChatReply 调用 AI 生成回复，失败时降级为固定文本
+func (s *SessionService) generateChatReply(ctx context.Context, sessionID string, history []model.Message, userMsg string) string {
+	if s.aiClient == nil {
+		return draftAssistantReply(userMsg)
+	}
+
+	systemPrompt := agent.BuildChatSystemPrompt()
+	userPrompt := agent.BuildChatUserPrompt(history, userMsg)
+
+	reply, err := s.aiClient.Generate(ctx, systemPrompt, userPrompt)
+	if err != nil {
+		log.Printf("[session %s] ai generate failed: %v", sessionID, err)
+		return draftAssistantReply(userMsg)
+	}
+	return reply
+}
+
+// StreamMessage 流式发送消息：先存用户消息，然后把 AI token 逐个写入 ch，最后存 assistant 消息
+// ch 由调用方创建，本函数在 goroutine 中运行，结束后关闭 ch
+func (s *SessionService) StreamMessage(ctx context.Context, userID string, sessionID string, content string, ch chan<- string) {
+	defer close(ch)
+
+	user, err := s.authService.CurrentUser(ctx, userID)
+	if err != nil {
+		ch <- "[ERROR] " + err.Error()
+		return
+	}
+	_ = user
+
+	if _, err := s.repository.AddMessage(ctx, sessionID, model.MessageUser, content); err != nil {
+		ch <- "[ERROR] " + err.Error()
+		return
+	}
+
+	aggregate, err := s.repository.GetSessionAggregate(ctx, sessionID)
+	if err != nil {
+		ch <- "[ERROR] " + err.Error()
+		return
+	}
+
+	// 发布意图 / 已发布状态：使用固定回复（非流式，包装成单条 token）
+	if isPublishIntent(content) {
+		if aggregate.Session.Status == model.SessionDraft {
+			if user.Role == model.RoleProduct || user.Role == model.RoleAdmin {
+				if s.publisher != nil {
+					if err := s.publisher.PublishSession(ctx, userID, sessionID); err == nil {
+						reply := autoPublishAcceptedReply(content)
+						_, _ = s.repository.AddMessage(ctx, sessionID, model.MessageAssistant, reply)
+						ch <- reply
+						return
+					}
+				}
+			} else {
+				reply := publishPermissionDeniedReply(content)
+				_, _ = s.repository.AddMessage(ctx, sessionID, model.MessageAssistant, reply)
+				ch <- reply
+				return
+			}
+		}
+	}
+
+	if aggregate.Requirement != nil {
+		reply := publishedAssistantReply(content, aggregate.Requirement.Summary)
+		_, _ = s.repository.AddMessage(ctx, sessionID, model.MessageAssistant, reply)
+		ch <- reply
+		return
+	}
+	if aggregate.Session.Status != model.SessionDraft {
+		reply := publishInProgressReply(content)
+		_, _ = s.repository.AddMessage(ctx, sessionID, model.MessageAssistant, reply)
+		ch <- reply
+		return
+	}
+
+	// 草稿阶段：流式 AI 回复
+	if s.aiClient == nil {
+		reply := draftAssistantReply(content)
+		_, _ = s.repository.AddMessage(ctx, sessionID, model.MessageAssistant, reply)
+		ch <- reply
+		return
+	}
+
+	systemPrompt := agent.BuildChatSystemPrompt()
+	userPrompt := agent.BuildChatUserPrompt(aggregate.Messages, content)
+
+	// 用缓冲 channel 收集完整回复，同时转发到 ch
+	tokenCh := make(chan string, 64)
+	var fullReply strings.Builder
+
+	go func() {
+		if err := s.aiClient.GenerateStream(ctx, systemPrompt, userPrompt, tokenCh); err != nil {
+			log.Printf("[session %s] stream failed: %v", sessionID, err)
+		}
+	}()
+
+	for token := range tokenCh {
+		fullReply.WriteString(token)
+		ch <- token
+	}
+
+	// 把完整回复存库
+	if fullReply.Len() > 0 {
+		_, _ = s.repository.AddMessage(ctx, sessionID, model.MessageAssistant, fullReply.String())
+	} else {
+		// 流式失败，降级
+		fallback := draftAssistantReply(content)
+		_, _ = s.repository.AddMessage(ctx, sessionID, model.MessageAssistant, fallback)
+		ch <- fallback
+	}
 }
 
 func draftAssistantReply(prompt string) string {

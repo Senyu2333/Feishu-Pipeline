@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"fmt"
+	"io"
 	"net/http"
 
 	"feishu-pipeline/apps/api-go/internal/repo"
@@ -106,6 +108,48 @@ func (c *SessionController) AddMessage(ctx *gin.Context) {
 	}
 	writeSuccess(ctx, http.StatusCreated, mapSessionDetail(detail))
 }
+
+// StreamMessage SSE 流式消息
+// @tags 会话
+// @summary 流式追加消息（SSE）
+// @router /api/sessions/{sessionID}/messages/stream [POST]
+// @accept application/json
+// @produce text/event-stream
+// @param sessionID path string true "会话ID"
+// @param req body sessiontype.CreateMessageRequest true "json入参"
+func (c *SessionController) StreamMessage(ctx *gin.Context) {
+	var request sessiontype.CreateMessageRequest
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		writeError(ctx, http.StatusBadRequest, err)
+		return
+	}
+
+	ctx.Header("Content-Type", "text/event-stream")
+	ctx.Header("Cache-Control", "no-cache")
+	ctx.Header("Connection", "keep-alive")
+	ctx.Header("X-Accel-Buffering", "no")
+
+	ch := make(chan string, 64)
+
+	go c.sessionService.StreamMessage(
+		ctx.Request.Context(),
+		currentUserID(ctx),
+		ctx.Param("sessionID"),
+		request.Content,
+		ch,
+	)
+
+	ctx.Stream(func(w io.Writer) bool {
+		token, ok := <-ch
+		if !ok {
+			fmt.Fprintf(w, "data: [DONE]\n\n")
+			return false
+		}
+		fmt.Fprintf(w, "data: %s\n\n", token)
+		return true
+	})
+}
+
 
 // Publish
 // @tags 会话

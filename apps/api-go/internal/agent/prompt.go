@@ -12,6 +12,42 @@ const (
 	jsonOnlyInstruction = "你必须只输出合法 JSON，不要输出 Markdown 代码块、解释、前后缀说明。"
 )
 
+// BuildChatSystemPrompt 需求助手对话系统 prompt（供 session_service 调用）
+func BuildChatSystemPrompt() string {
+	return strings.Join([]string{
+		"你是需求交付引擎的 AI 助手，专注于帮助产品经理和研发团队整理、分析、完善产品需求。",
+		"你可以帮助用户澄清需求目标、识别边界、梳理核心流程、明确验收标准、提示风险点。",
+		"当用户描述需求时，请积极追问关键细节，帮助他们完善需求内容。",
+		"回答应简洁专业，使用中文，避免过度发散。",
+		"如果用户说「发布需求」或类似意图，告知他们系统会自动触发交付工作流。",
+	}, "\n")
+}
+
+// BuildChatUserPrompt 构建带历史上下文的用户 prompt（供 session_service 调用）
+func BuildChatUserPrompt(history []model.Message, userMsg string) string {
+	if len(history) == 0 {
+		return userMsg
+	}
+
+	// 最多带最近 10 条历史，避免 token 过长
+	start := 0
+	if len(history) > 10 {
+		start = len(history) - 10
+	}
+
+	lines := make([]string, 0, len(history)-start+2)
+	lines = append(lines, "以下是之前的对话记录：")
+	for _, msg := range history[start:] {
+		role := "用户"
+		if msg.Role == model.MessageAssistant {
+			role = "助手"
+		}
+		lines = append(lines, fmt.Sprintf("[%s]: %s", role, strings.TrimSpace(msg.Content)))
+	}
+	lines = append(lines, "\n当前用户消息："+userMsg)
+	return strings.Join(lines, "\n")
+}
+
 func buildNormalizeSystemPrompt() string {
 	return strings.Join([]string{
 		"你是需求交付引擎中的需求分析助手。",

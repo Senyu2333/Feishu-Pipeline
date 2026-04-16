@@ -78,6 +78,7 @@ func (r *Repository) AutoMigrate(ctx context.Context) error {
 		&model.Requirement{},
 		&model.Task{},
 		&model.RoleMapping{},
+		&model.RoleOwner{},
 		&model.KnowledgeSource{},
 		&model.MessageDelivery{},
 	)
@@ -96,6 +97,22 @@ func (r *Repository) Seed(ctx context.Context) error {
 				{ID: "rm_backend", Name: "后端角色", Keyword: "后端", Role: model.RoleBackend, Departments: []string{"后端部"}},
 			}
 			if err := tx.Create(&mappings).Error; err != nil {
+				return err
+			}
+		}
+
+		if err := tx.Model(&model.RoleOwner{}).Count(&count).Error; err != nil {
+			return err
+		}
+		if count == 0 {
+			now := time.Now().UTC()
+			owners := []model.RoleOwner{
+				{ID: "ro_product", Role: model.RoleProduct, OwnerName: "产品负责人", FeishuIDType: "user_id", Enabled: false, BaseModel: model.BaseModel{CreatedAt: now, UpdatedAt: now}},
+				{ID: "ro_frontend", Role: model.RoleFrontend, OwnerName: "前端负责人", FeishuIDType: "user_id", Enabled: false, BaseModel: model.BaseModel{CreatedAt: now, UpdatedAt: now}},
+				{ID: "ro_backend", Role: model.RoleBackend, OwnerName: "后端负责人", FeishuIDType: "user_id", Enabled: false, BaseModel: model.BaseModel{CreatedAt: now, UpdatedAt: now}},
+				{ID: "ro_admin", Role: model.RoleAdmin, OwnerName: "管理员", FeishuIDType: "user_id", Enabled: false, BaseModel: model.BaseModel{CreatedAt: now, UpdatedAt: now}},
+			}
+			if err := tx.Create(&owners).Error; err != nil {
 				return err
 			}
 		}
@@ -323,10 +340,13 @@ func (r *Repository) UpdateTaskStatus(ctx context.Context, taskID string, status
 	return task, nil
 }
 
-func (r *Repository) UpdateTaskLinks(ctx context.Context, taskID string, docURL string, bitableURL string) error {
+func (r *Repository) UpdateTaskLinks(ctx context.Context, taskID string, docURL string, bitableURL string, bitableRecordID string, bitableAppToken string, bitableTableID string) error {
 	return r.db.WithContext(ctx).Model(&model.Task{}).Where("id = ?", taskID).Updates(map[string]any{
 		"doc_url":            docURL,
 		"bitable_record_url": bitableURL,
+		"bitable_record_id":  bitableRecordID,
+		"bitable_app_token":  bitableAppToken,
+		"bitable_table_id":   bitableTableID,
 		"updated_at":         time.Now().UTC(),
 	}).Error
 }
@@ -373,6 +393,26 @@ func (r *Repository) SaveRoleMapping(ctx context.Context, mapping *model.RoleMap
 func (r *Repository) ListRoleMappings(ctx context.Context) ([]model.RoleMapping, error) {
 	var items []model.RoleMapping
 	err := r.db.WithContext(ctx).Order("name ASC").Find(&items).Error
+	return items, err
+}
+
+func (r *Repository) SaveRoleOwner(ctx context.Context, owner *model.RoleOwner) error {
+	if owner.ID == "" {
+		var existing model.RoleOwner
+		err := r.db.WithContext(ctx).First(&existing, "role = ?", owner.Role).Error
+		if err == nil {
+			owner.ID = existing.ID
+			owner.CreatedAt = existing.CreatedAt
+		} else {
+			owner.ID = utils.NewID("ro")
+		}
+	}
+	return r.db.WithContext(ctx).Save(owner).Error
+}
+
+func (r *Repository) ListRoleOwners(ctx context.Context) ([]model.RoleOwner, error) {
+	var items []model.RoleOwner
+	err := r.db.WithContext(ctx).Order("role ASC").Find(&items).Error
 	return items, err
 }
 

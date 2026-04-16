@@ -13,6 +13,7 @@ type Config struct {
 	App      AppConfig      `mapstructure:"app"`
 	Database DatabaseConfig `mapstructure:"database"`
 	Feishu   FeishuConfig   `mapstructure:"feishu"`
+	AI       AIConfig       `mapstructure:"ai"`
 }
 
 type AppConfig struct {
@@ -33,15 +34,32 @@ type DatabaseConfig struct {
 }
 
 type FeishuConfig struct {
-	Enabled         bool   `mapstructure:"enabled"`
-	AppID           string `mapstructure:"app_id"`
-	AppSecret       string `mapstructure:"app_secret"`
-	RedirectURL     string `mapstructure:"redirect_url"`
-	OpenBaseURL     string `mapstructure:"open_base_url"`
-	BotName         string `mapstructure:"bot_name"`
-	ReceiveIDType   string `mapstructure:"receive_id_type"`
-	BitableAppToken string `mapstructure:"bitable_app_token"`
-	BitableTableID  string `mapstructure:"bitable_table_id"`
+	Enabled            bool   `mapstructure:"enabled"`
+	AppID              string `mapstructure:"app_id"`
+	AppSecret          string `mapstructure:"app_secret"`
+	RedirectURL        string `mapstructure:"redirect_url"`
+	OpenBaseURL        string `mapstructure:"open_base_url"`
+	BotName            string `mapstructure:"bot_name"`
+	ReceiveIDType      string `mapstructure:"receive_id_type"`
+	DocFolderToken     string `mapstructure:"doc_folder_token"`
+	BitableName        string `mapstructure:"bitable_name"`
+	BitableFolderToken string `mapstructure:"bitable_folder_token"`
+	BitableAppToken    string `mapstructure:"bitable_app_token"`
+	BitableTableID     string `mapstructure:"bitable_table_id"`
+}
+
+type AIConfig struct {
+	Provider string      `mapstructure:"provider"`
+	Ark      ArkAIConfig `mapstructure:"ark"`
+}
+
+type ArkAIConfig struct {
+	BaseURL     string  `mapstructure:"base_url"`
+	Model       string  `mapstructure:"model"`
+	APIKey      string  `mapstructure:"api_key"`
+	Temperature float32 `mapstructure:"temperature"`
+	MaxTokens   int     `mapstructure:"max_tokens"`
+	TimeoutSec  int     `mapstructure:"timeout_sec"`
 }
 
 func LoadConfig(configPath string) (*Config, error) {
@@ -95,7 +113,28 @@ func LoadConfig(configPath string) (*Config, error) {
 		cfg.Feishu.BotName = "需求交付机器人"
 	}
 	if cfg.Feishu.ReceiveIDType == "" {
-		cfg.Feishu.ReceiveIDType = "open_id"
+		cfg.Feishu.ReceiveIDType = "user_id"
+	}
+	if cfg.Feishu.BitableName == "" {
+		cfg.Feishu.BitableName = "需求排期"
+	}
+	if cfg.AI.Provider == "" {
+		cfg.AI.Provider = "ark"
+	}
+	if cfg.AI.Ark.BaseURL == "" {
+		cfg.AI.Ark.BaseURL = "https://ark.cn-beijing.volces.com/api/v3"
+	}
+	if cfg.AI.Ark.Model == "" {
+		cfg.AI.Ark.Model = "doubao-seed-2-0-lite-260215"
+	}
+	if cfg.AI.Ark.MaxTokens <= 0 {
+		cfg.AI.Ark.MaxTokens = 4096
+	}
+	if cfg.AI.Ark.TimeoutSec <= 0 {
+		cfg.AI.Ark.TimeoutSec = 120
+	}
+	if cfg.AI.Ark.APIKey == "" {
+		cfg.AI.Ark.APIKey = strings.TrimSpace(os.Getenv("FEISHU_PIPELINE_AI_ARK_API_KEY"))
 	}
 
 	cfg.Database.Path = resolvePath(cfg.Database.Path)

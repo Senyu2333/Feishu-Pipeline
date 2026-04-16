@@ -34,6 +34,7 @@ func New(deps Dependencies) *gin.Engine {
 	authenticated.POST("/sessions", deps.SessionController.CreateSession)
 	authenticated.GET("/sessions/:sessionID", deps.SessionController.GetSession)
 	authenticated.POST("/sessions/:sessionID/messages", deps.SessionController.AddMessage)
+	authenticated.POST("/sessions/:sessionID/messages/stream", deps.SessionController.StreamMessage)
 	authenticated.POST("/sessions/:sessionID/publish", deps.SessionController.Publish)
 	authenticated.POST("/sessions/:sessionID/auto-publish-check", deps.SessionController.AutoPublishCheck)
 	authenticated.GET("/tasks/:taskID", deps.TaskController.GetTask)
@@ -42,6 +43,8 @@ func New(deps Dependencies) *gin.Engine {
 	adminGroup := authenticated.Group("/admin")
 	adminGroup.Use(middleware.AdminOnly(deps.AuthService))
 	adminGroup.POST("/role-mappings", deps.AdminController.CreateRoleMapping)
+	adminGroup.GET("/role-owners", deps.AdminController.ListRoleOwners)
+	adminGroup.POST("/role-owners", deps.AdminController.SaveRoleOwner)
 	adminGroup.POST("/knowledge/sync", deps.AdminController.SyncKnowledge)
 
 	return engine

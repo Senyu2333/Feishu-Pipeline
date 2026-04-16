@@ -50,10 +50,16 @@ func (s *AuthService) LoginByCode(ctx context.Context, code string) (model.User,
 	}
 
 	user := mapProfileToUser(profile)
+	departments, classifyErr := s.resolveDepartments(ctx, profile)
+	if classifyErr == nil {
+		user.Departments = departments
+		user.Role = classifyRoleByDepartments(departments)
+	}
+
 	if existing, err := s.repository.FindUserByID(ctx, user.ID); err == nil {
-		user.Role = existing.Role
-		if len(existing.Departments) > 0 {
-			user.Departments = existing.Departments
+		// 管理员角色由后台显式维护，不被登录时的部门同步覆盖。
+		if existing.Role == model.RoleAdmin {
+			user.Role = model.RoleAdmin
 		}
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return model.User{}, model.LoginSession{}, err
@@ -176,7 +182,78 @@ func mapProfileToUser(profile feishu.UserProfile) model.User {
 		FeishuOpenID: profile.OpenID,
 		Name:         utils.Coalesce(profile.Name, profile.EnName, "飞书用户"),
 		Email:        utils.Coalesce(profile.EnterpriseEmail, profile.Email),
-		Role:         model.RoleProduct,
-		Departments:  []string{"飞书组织"},
+		AvatarURL:    profile.AvatarURL,
+		Role:         model.RoleOther,
+		Departments:  []string{"其他"},
 	}
+}
+
+func (s *AuthService) resolveDepartments(ctx context.Context, profile feishu.UserProfile) ([]string, error) {
+	userIdentifier := strings.TrimSpace(profile.FeishuUserID)
+	userIDType := "user_id"
+	if userIdentifier == "" {
+		userIdentifier = strings.TrimSpace(profile.OpenID)
+		userIDType = "open_id"
+	}
+	if userIdentifier == "" {
+		return []string{"其他"}, errors.New("feishu user identifier is empty")
+	}
+
+	items, err := s.feishuClient.ListUserDepartments(ctx, userIdentifier, userIDType)
+	if err != nil {
+		return []string{"其他"}, err
+	}
+	if len(items) == 0 {
+		return []string{"其他"}, nil
+	}
+
+	names := make([]string, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		name := strings.TrimSpace(item.Name)
+		if name == "" {
+			name = strings.TrimSpace(item.NameEN)
+		}
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	if len(names) == 0 {
+		return []string{"其他"}, nil
+	}
+	return names, nil
+}
+
+func classifyRoleByDepartments(departments []string) model.Role {
+	hasKeyword := func(keywords ...string) bool {
+		for _, department := range departments {
+			name := normalizeDepartmentName(department)
+			for _, keyword := range keywords {
+				if strings.Contains(name, keyword) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	switch {
+	case hasKeyword("产品", "product", "pm"):
+		return model.RoleProduct
+	case hasKeyword("前端", "frontend", "front-end", "fe"):
+		return model.RoleFrontend
+	case hasKeyword("后端", "backend", "back-end", "be", "服务端", "server"):
+		return model.RoleBackend
+	default:
+		return model.RoleOther
+	}
+}
+
+func normalizeDepartmentName(value string) string {
+	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(value), " ", ""))
 }

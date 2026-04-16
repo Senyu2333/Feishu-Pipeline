@@ -4,6 +4,25 @@ import { Spin, message } from 'antd'
 
 const API_BASE = '/api'
 
+// 飞书 OAuth code 仅单次有效；React StrictMode 会重复执行 effect，需合并为同一请求。
+const feishuLoginInFlight = new Map<string, Promise<Response>>()
+
+function postFeishuSSOLogin(code: string): Promise<Response> {
+  let p = feishuLoginInFlight.get(code)
+  if (!p) {
+    p = fetch(`${API_BASE}/auth/feishu/sso/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ code }),
+    }).finally(() => {
+      feishuLoginInFlight.delete(code)
+    })
+    feishuLoginInFlight.set(code, p)
+  }
+  return p
+}
+
 export default function AuthCallback() {
   const navigate = useNavigate()
 
@@ -29,13 +48,7 @@ export default function AuthCallback() {
       }
 
       try {
-        // 用 code 换取登录会话
-        const res = await fetch(`${API_BASE}/auth/feishu/sso/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ code }),
-        })
+        const res = await postFeishuSSOLogin(code)
 
         if (!res.ok) {
           throw new Error('登录失败')

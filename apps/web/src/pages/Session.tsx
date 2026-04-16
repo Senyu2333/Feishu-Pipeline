@@ -1,5 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams } from '@tanstack/react-router'
+import { Bubble, Sender } from '@ant-design/x'
+import type { BubbleListProps } from '@ant-design/x'
+import XMarkdown from '@ant-design/x-markdown'
+import { Avatar } from 'antd'
+import { UserOutlined, RobotOutlined } from '@ant-design/icons'
 import Sidebar from '../components/Sidebar'
 
 interface Message {
@@ -18,17 +23,124 @@ interface SessionDetail {
   messages: Message[]
 }
 
+interface CurrentUser {
+  id: string
+  name: string
+  avatarUrl: string
+}
+
+// loading 占位消息 id
+const LOADING_MSG_ID = '__loading__'
+// 流式输出时 assistant 气泡 id
+const STREAMING_MSG_ID = '__streaming__'
+
 export default function Session() {
   const { sessionId } = useParams({ strict: false })
   const [session, setSession] = useState<SessionDetail | null>(null)
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
   const [loading, setLoading] = useState(true)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
-  // 左侧导航固定 80px
-  const sidebarWidth = 80
+  const [convCollapsed, setConvCollapsed] = useState(false)
+  const sidebarWidth = convCollapsed ? 80 : 336 // 折叠 80，展开 80+256=336
+  // 防止首条消息重复发送
+  const pendingSentRef = useRef(false)
 
-  // 获取会话详情
+  // 获取当前登录用户（用于头像）
   useEffect(() => {
+    fetch('/api/me', { credentials: 'include' })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => { if (data?.data) setCurrentUser(data.data) })
+      .catch(() => {})
+  }, [])
+
+  // 发送消息（抽出独立函数，供手动发送和自动发送复用）
+  const sendMessage = async (content: string) => {
+    if (!content.trim() || sending) return
+    setSending(true)
+
+    // 乐观渲染：立即把用户消息 + loading 气泡追加到本地
+    setSession(prev => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        messages: [
+          ...prev.messages,
+          { id: `local_${Date.now()}`, role: 'user', content, createdAt: new Date().toISOString() },
+          { id: LOADING_MSG_ID, role: 'assistant', content: '', createdAt: new Date().toISOString() },
+        ],
+      }
+    })
+
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}/messages/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ content }),
+      })
+
+      if (!res.ok || !res.body) {
+        throw new Error('Stream request failed')
+      }
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let accumulated = ''
+
+      // 把 loading 气泡变成真实的 assistant 消息（先用空内容占位）
+      setSession(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          messages: prev.messages.map(m =>
+            m.id === LOADING_MSG_ID
+              ? { ...m, id: STREAMING_MSG_ID, content: '' }
+              : m
+          ),
+        }
+      })
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        const chunk = decoder.decode(value, { stream: true })
+        const lines = chunk.split('\n')
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const data = line.slice(6).trim()
+          if (data === '[DONE]') break
+          accumulated += data
+          // 逐字更新 assistant 气泡
+          setSession(prev => {
+            if (!prev) return prev
+            return {
+              ...prev,
+              messages: prev.messages.map(m =>
+                m.id === STREAMING_MSG_ID
+                  ? { ...m, content: accumulated }
+                  : m
+              ),
+            }
+          })
+        }
+      }
+    } catch (err) {
+      console.error('Failed to send message:', err)
+      // 失败时移除 loading 气泡
+      setSession(prev => {
+        if (!prev) return prev
+        return { ...prev, messages: prev.messages.filter(m => m.id !== LOADING_MSG_ID) }
+      })
+    } finally {
+      setSending(false)
+    }
+  }
+
+  // 获取会话详情，加载完毕后检查是否有待发消息（从 Home 跳转过来的首条消息）
+  useEffect(() => {
+    if (!sessionId) return
     fetch(`/api/sessions/${sessionId}`, { credentials: 'include' })
       .then(res => {
         if (res.ok) return res.json()
@@ -36,39 +148,51 @@ export default function Session() {
       })
       .then(data => {
         if (data.data) setSession(data.data)
+        // 检查 Home 传来的首条消息
+        const pendingKey = `pending_msg_${sessionId}`
+        const pendingMsg = sessionStorage.getItem(pendingKey)
+        if (pendingMsg && !pendingSentRef.current) {
+          pendingSentRef.current = true
+          sessionStorage.removeItem(pendingKey)
+          // 微任务延迟，确保 setSession 已完成
+          setTimeout(() => sendMessage(pendingMsg), 0)
+        }
       })
       .catch(console.error)
       .finally(() => setLoading(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId])
 
-  // 发送消息
-  const handleSend = async () => {
-    if (!input.trim() || sending) return
-    setSending(true)
-    try {
-      const res = await fetch(`/api/sessions/${sessionId}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ content: input })
-      })
-      if (res.ok) {
-        const data = await res.json()
-        if (data.data) setSession(data.data)
-        setInput('')
-      }
-    } catch (err) {
-      console.error('Failed to send message:', err)
-    } finally {
-      setSending(false)
-    }
+  // 构建 Bubble.List items
+  const bubbleItems: BubbleListProps['items'] = (session?.messages ?? []).map(msg => ({
+    key: msg.id,
+    role: msg.role === 'user' ? 'user' : 'assistant',
+    content: msg.content,
+    loading: msg.id === LOADING_MSG_ID,
+  }))
+
+  // role 配置（@ant-design/x v2 用 role 单数，每条 item 的 role 字段指向此配置）
+  const roleConfig: BubbleListProps['role'] = {
+    user: {
+      placement: 'end',
+      avatar: currentUser?.avatarUrl
+        ? <Avatar src={currentUser.avatarUrl} alt={currentUser.name} />
+        : <Avatar icon={<UserOutlined />} style={{ background: '#1677ff' }} />,
+    },
+    assistant: {
+      placement: 'start',
+      avatar: <Avatar icon={<RobotOutlined />} style={{ background: '#f5f5f5', color: '#555' }} />,
+      contentRender: (content) => <XMarkdown>{String(content)}</XMarkdown>,
+    },
   }
+
+  const sidebarProps = { convCollapsed, onConvCollapse: setConvCollapsed }
 
   if (loading) {
     return (
       <div className="min-h-screen bg-background">
-        <Sidebar />
-        <main className="h-screen flex items-center justify-center transition-all duration-300" style={{ marginLeft: `${sidebarWidth}px` }}>
+        <Sidebar {...sidebarProps} />
+        <main className="h-screen flex items-center justify-center" style={{ marginLeft: `${sidebarWidth}px` }}>
           <span className="material-symbols-outlined text-primary text-2xl animate-spin">progress_activity</span>
         </main>
       </div>
@@ -78,11 +202,9 @@ export default function Session() {
   if (!session) {
     return (
       <div className="min-h-screen bg-background">
-        <Sidebar />
-        <main className="h-screen flex items-center justify-center transition-all duration-300" style={{ marginLeft: `${sidebarWidth}px` }}>
-          <div className="text-center">
-            <p className="text-on-surface-variant">Session not found</p>
-          </div>
+        <Sidebar {...sidebarProps} />
+        <main className="h-screen flex items-center justify-center" style={{ marginLeft: `${sidebarWidth}px` }}>
+          <p className="text-on-surface-variant">Session not found</p>
         </main>
       </div>
     )
@@ -90,66 +212,38 @@ export default function Session() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Sidebar />
-      <main className="h-screen flex flex-col relative overflow-hidden transition-all duration-300" style={{ marginLeft: `${sidebarWidth}px` }}>
+      <Sidebar {...sidebarProps} />
+      <main
+        className="h-screen flex flex-col overflow-hidden transition-all duration-300"
+        style={{ marginLeft: `${sidebarWidth}px` }}
+      >
         {/* Header */}
-        <div className="h-16 px-6 flex items-center border-b border-outline-variant/20 bg-white/50">
-          <h1 className="text-lg font-semibold text-on-surface truncate">{session.session.title}</h1>
+        <div className="h-14 px-6 flex items-center border-b border-slate-100 bg-white/80 backdrop-blur flex-shrink-0">
+          <h1 className="text-base font-semibold text-slate-800 truncate">{session.session.title}</h1>
         </div>
 
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-6 md:px-12 py-8 flex flex-col gap-6">
-          {session.messages.length === 0 ? (
-            <div className="text-center text-on-surface-variant py-12">
-              <p>Start a conversation...</p>
-            </div>
-          ) : (
-            session.messages.map((msg) => (
-              <div
-                key={msg.id}
-                className={`flex items-start gap-4 max-w-[85%] ${msg.role === 'user' ? 'self-end flex-row-reverse' : ''}`}
-              >
-                <div className={`w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center ${
-                  msg.role === 'user' ? 'bg-primary shadow-md' : 'bg-surface-container-high'
-                }`}>
-                  <span className={`material-symbols-outlined text-sm ${msg.role === 'user' ? 'text-white' : 'text-primary'}`}>
-                    {msg.role === 'user' ? 'person' : 'auto_awesome'}
-                  </span>
-                </div>
-                <div className={`p-4 rounded-2xl ${
-                  msg.role === 'user'
-                    ? 'bg-primary text-white rounded-tr-none shadow-md'
-                    : 'bg-surface-container-lowest border border-outline-variant/10 rounded-tl-none shadow-sm'
-                }`}>
-                  <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
-                </div>
-              </div>
-            ))
-          )}
+        {/* 消息区域 */}
+        <div className="flex-1 overflow-hidden px-4 md:px-16 py-4">
+          <Bubble.List
+            items={bubbleItems}
+            role={roleConfig}
+            style={{ height: '100%' }}
+          />
         </div>
 
-        {/* Input */}
-        <div className="px-6 md:px-12 pb-6">
-          <div className="bg-surface-container-lowest rounded-2xl border border-outline-variant p-2 flex items-center gap-2">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-              placeholder="Type your message..."
-              className="flex-1 bg-transparent border-0 outline-none text-on-surface placeholder:text-on-surface/40 px-2"
-              disabled={sending}
-            />
-            <button
-              onClick={handleSend}
-              disabled={!input.trim() || sending}
-              className="w-8 h-8 rounded-full border-0 bg-primary text-white cursor-pointer flex items-center justify-center hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <span className="material-symbols-outlined text-sm">{sending ? 'progress_activity' : 'send'}</span>
-            </button>
-          </div>
+        {/* 输入区域 */}
+        <div className="px-4 md:px-16 pb-6 flex-shrink-0">
+          <Sender
+            value={input}
+            onChange={setInput}
+            onSubmit={() => { const c = input; setInput(''); sendMessage(c) }}
+            loading={sending}
+            placeholder="描述你的需求，Shift+Enter 换行，Enter 发送..."
+          />
+          <p className="text-center text-xs text-slate-400 mt-2">内容由 AI 生成，请仔细甄别</p>
         </div>
       </main>
     </div>
   )
 }
+

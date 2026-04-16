@@ -7,6 +7,7 @@ type UserResponse struct {
 	FeishuOpenID string     `json:"feishuOpenID,omitempty"`
 	Name         string     `json:"name"`
 	Email        string     `json:"email,omitempty"`
+	AvatarUrl    string     `json:"avatarUrl,omitempty"`
 	Role         model.Role `json:"role"`
 	Departments  []string   `json:"departments"`
 }
@@ -30,6 +31,7 @@ func NewUserResponse(user model.User) UserResponse {
 		FeishuOpenID: user.FeishuOpenID,
 		Name:         user.Name,
 		Email:        user.Email,
+		AvatarUrl:    user.AvatarURL,
 		Role:         user.Role,
 		Departments:  user.Departments,
 	}

@@ -41,3 +41,8 @@ coverage/
 
 # Local app data
 apps/api-go/data/
+apps/api-go/config/config.yaml
+
+# API Documentation
+API.md
+Feishu-Pipeline-API.postman_collection.json

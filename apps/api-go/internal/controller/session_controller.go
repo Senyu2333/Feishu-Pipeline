@@ -121,6 +121,34 @@ func (c *SessionController) Publish(ctx *gin.Context) {
 	writeSuccess(ctx, http.StatusAccepted, acceptedMessage())
 }
 
+func (c *SessionController) AutoPublishCheck(ctx *gin.Context) {
+	var request sessiontype.AutoPublishCheckRequest
+	if err := ctx.ShouldBindJSON(&request); err != nil {
+		writeError(ctx, http.StatusBadRequest, err)
+		return
+	}
+
+	triggered, reason, err := c.publishService.TryAutoPublishByMessage(
+		ctx.Request.Context(),
+		currentUserID(ctx),
+		ctx.Param("sessionID"),
+		request.Content,
+	)
+	if err != nil {
+		writeError(ctx, http.StatusBadRequest, err)
+		return
+	}
+
+	status := http.StatusOK
+	if triggered {
+		status = http.StatusAccepted
+	}
+	writeSuccess(ctx, status, sessiontype.AutoPublishCheckResponse{
+		Triggered: triggered,
+		Reason:    reason,
+	})
+}
+
 func mapSessionDetail(aggregate *repo.SessionAggregate) sessiontype.SessionDetailResponse {
 	messageResponses := make([]sessiontype.MessageResponse, 0, len(aggregate.Messages))
 	for _, message := range aggregate.Messages {

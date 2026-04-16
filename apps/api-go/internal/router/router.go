@@ -35,6 +35,7 @@ func New(deps Dependencies) *gin.Engine {
 	authenticated.GET("/sessions/:sessionID", deps.SessionController.GetSession)
 	authenticated.POST("/sessions/:sessionID/messages", deps.SessionController.AddMessage)
 	authenticated.POST("/sessions/:sessionID/publish", deps.SessionController.Publish)
+	authenticated.POST("/sessions/:sessionID/auto-publish-check", deps.SessionController.AutoPublishCheck)
 	authenticated.GET("/tasks/:taskID", deps.TaskController.GetTask)
 	authenticated.PATCH("/tasks/:taskID/status", deps.TaskController.UpdateTaskStatus)
 

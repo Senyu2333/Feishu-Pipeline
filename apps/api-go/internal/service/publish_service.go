@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"feishu-pipeline/apps/api-go/internal/agent"
@@ -64,6 +65,49 @@ func (s *PublishService) PublishSession(ctx context.Context, userID string, sess
 
 	s.queue.Enqueue(job.PublishJob{SessionID: sessionID})
 	return nil
+}
+
+func (s *PublishService) TryAutoPublishByMessage(ctx context.Context, userID string, sessionID string, content string) (bool, string, error) {
+	user, err := s.authService.CurrentUser(ctx, userID)
+	if err != nil {
+		return false, "authentication required", err
+	}
+	if user.Role != model.RoleProduct && user.Role != model.RoleAdmin {
+		return false, "user role is not product/admin", nil
+	}
+	if !containsScheduleSignal(content) {
+		return false, "message does not include schedule signal", nil
+	}
+
+	aggregate, err := s.repository.GetSessionAggregate(ctx, sessionID)
+	if err != nil {
+		return false, "session not found", err
+	}
+	if aggregate.Session.Status != model.SessionDraft {
+		return false, "session is not in draft status", nil
+	}
+
+	if err := s.PublishSession(ctx, userID, sessionID); err != nil {
+		return false, "auto publish failed", err
+	}
+	return true, "auto publish accepted", nil
+}
+
+func containsScheduleSignal(content string) bool {
+	text := strings.ToLower(strings.TrimSpace(content))
+	if text == "" {
+		return false
+	}
+
+	keywords := []string{
+		"排期", "上线", "截止", "ddl", "deadline", "milestone", "里程碑", "交付时间", "本周", "下周",
+	}
+	for _, keyword := range keywords {
+		if strings.Contains(text, strings.ToLower(keyword)) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *PublishService) HandlePublish(ctx context.Context, payload job.PublishJob) error {

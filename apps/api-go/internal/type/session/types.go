@@ -16,6 +16,15 @@ type CreateMessageRequest struct {
 	Content string `json:"content" binding:"required"`
 }
 
+type AutoPublishCheckRequest struct {
+	Content string `json:"content" binding:"required"`
+}
+
+type AutoPublishCheckResponse struct {
+	Triggered bool   `json:"triggered"`
+	Reason    string `json:"reason"`
+}
+
 type SessionSummaryResponse struct {
 	ID           string              `json:"id"`
 	Title        string              `json:"title"`

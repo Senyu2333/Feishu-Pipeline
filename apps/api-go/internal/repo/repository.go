@@ -142,6 +142,15 @@ func (r *Repository) FindUserByID(ctx context.Context, userID string) (model.Use
 	return user, err
 }
 
+func (r *Repository) FindLatestUserByRole(ctx context.Context, role model.Role) (model.User, error) {
+	var user model.User
+	err := r.db.WithContext(ctx).
+		Where("role = ? AND feishu_open_id <> ''", role).
+		Order("updated_at DESC").
+		First(&user).Error
+	return user, err
+}
+
 func (r *Repository) UpsertUser(ctx context.Context, user *model.User) error {
 	return r.db.WithContext(ctx).Save(user).Error
 }

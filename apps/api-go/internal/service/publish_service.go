@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"log"
 	"strings"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 	"feishu-pipeline/apps/api-go/internal/model"
 	"feishu-pipeline/apps/api-go/internal/repo"
 	"feishu-pipeline/apps/api-go/internal/utils"
+
+	"gorm.io/gorm"
 )
 
 type PublishQueue interface {
@@ -110,7 +113,17 @@ func containsScheduleSignal(content string) bool {
 	return false
 }
 
-func (s *PublishService) HandlePublish(ctx context.Context, payload job.PublishJob) error {
+func (s *PublishService) HandlePublish(ctx context.Context, payload job.PublishJob) (err error) {
+	startedAt := time.Now().UTC()
+	log.Printf("publish workflow started: session_id=%s", payload.SessionID)
+	defer func() {
+		if err != nil {
+			log.Printf("publish workflow failed: session_id=%s elapsed_ms=%d err=%v", payload.SessionID, time.Since(startedAt).Milliseconds(), err)
+			return
+		}
+		log.Printf("publish workflow completed: session_id=%s elapsed_ms=%d", payload.SessionID, time.Since(startedAt).Milliseconds())
+	}()
+
 	aggregate, err := s.repository.GetSessionAggregate(ctx, payload.SessionID)
 	if err != nil {
 		return err
@@ -121,6 +134,10 @@ func (s *PublishService) HandlePublish(ctx context.Context, payload job.PublishJ
 		return err
 	}
 	roleOwners, err := s.repository.ListRoleOwners(ctx)
+	if err != nil {
+		return err
+	}
+	roleOwners, err = s.fillRoleOwnersFromUsers(ctx, roleOwners)
 	if err != nil {
 		return err
 	}
@@ -143,11 +160,13 @@ func (s *PublishService) HandlePublish(ctx context.Context, payload job.PublishJ
 	for idx := range output.Tasks {
 		docURL, err := s.feishuClient.CreateTaskDoc(ctx, aggregate.Session.Title, output.Tasks[idx])
 		if err != nil {
-			return err
+			log.Printf("publish session %s: create task doc failed for task %s: %v", payload.SessionID, output.Tasks[idx].ID, err)
+			docURL = ""
 		}
 		recordResult, err := s.feishuClient.UpsertTaskRecord(ctx, output.Tasks[idx])
 		if err != nil {
-			return err
+			log.Printf("publish session %s: upsert bitable record failed for task %s: %v", payload.SessionID, output.Tasks[idx].ID, err)
+			recordResult = feishu.TaskRecordResult{}
 		}
 		output.Tasks[idx].DocURL = docURL
 		output.Tasks[idx].BitableAppToken = recordResult.AppToken
@@ -157,7 +176,14 @@ func (s *PublishService) HandlePublish(ctx context.Context, payload job.PublishJ
 
 		sendResult, err := s.feishuClient.SendTaskMessage(ctx, output.Tasks[idx])
 		if err != nil {
-			return err
+			log.Printf("publish session %s: send task message failed for task %s: %v", payload.SessionID, output.Tasks[idx].ID, err)
+			sendResult = feishu.SendResult{
+				Channel:    "feishu-bot",
+				Receiver:   output.Tasks[idx].AssigneeName,
+				Status:     "failed",
+				RemoteID:   "",
+				RawPayload: err.Error(),
+			}
 		}
 		deliveries = append(deliveries, model.MessageDelivery{
 			ID:         utils.NewID("delivery"),
@@ -171,9 +197,51 @@ func (s *PublishService) HandlePublish(ctx context.Context, payload job.PublishJ
 		})
 	}
 
-	return s.repository.SavePublishResult(ctx, repo.PublishResult{
+	err = s.repository.SavePublishResult(ctx, repo.PublishResult{
 		Requirement: output.Requirement,
 		Tasks:       output.Tasks,
 		Deliveries:  deliveries,
 	})
+	if err != nil {
+		return err
+	}
+	log.Printf("publish workflow persisted: session_id=%s requirement_id=%s tasks=%d deliveries=%d", payload.SessionID, output.Requirement.ID, len(output.Tasks), len(deliveries))
+	return nil
+}
+
+func (s *PublishService) fillRoleOwnersFromUsers(ctx context.Context, existing []model.RoleOwner) ([]model.RoleOwner, error) {
+	hasEnabledOwner := make(map[model.Role]bool, len(existing))
+	for _, owner := range existing {
+		if owner.Enabled && strings.TrimSpace(owner.FeishuID) != "" {
+			hasEnabledOwner[owner.Role] = true
+		}
+	}
+
+	enrichRoles := []model.Role{model.RoleProduct, model.RoleFrontend, model.RoleBackend}
+	result := make([]model.RoleOwner, 0, len(existing)+len(enrichRoles))
+	result = append(result, existing...)
+
+	for _, role := range enrichRoles {
+		if hasEnabledOwner[role] {
+			continue
+		}
+		user, err := s.repository.FindLatestUserByRole(ctx, role)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		result = append(result, model.RoleOwner{
+			ID:           "",
+			Role:         role,
+			OwnerName:    user.Name,
+			FeishuID:     user.FeishuOpenID,
+			FeishuIDType: "open_id",
+			Enabled:      true,
+		})
+		log.Printf("publish role owner auto-matched: role=%s user_id=%s name=%s", role, user.ID, user.Name)
+	}
+
+	return result, nil
 }

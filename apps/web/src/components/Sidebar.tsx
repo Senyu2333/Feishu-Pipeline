@@ -43,8 +43,8 @@ export default function Sidebar({ convCollapsed = false, onConvCollapse }: Sideb
   const [sessions, setSessions] = useState<Session[]>([])
   const [sessionsLoading, setSessionsLoading] = useState(true)
 
-  // 只在主页显示右侧会话栏
-  const showConversationPanel = pathname === '/'
+  // 在主页和会话详情页均显示会话面板
+  const showConversationPanel = pathname === '/' || pathname.startsWith('/sessions')
 
   const isActive = (to: string) => pathname === to || (to !== '/' && pathname.startsWith(to))
 
@@ -263,20 +263,20 @@ export default function Sidebar({ convCollapsed = false, onConvCollapse }: Sideb
                   No conversations yet
                 </div>
               ) : (
-                sessions.map((session, index) => {
-                  const isFirst = index === 0
+                sessions.map((session) => {
+                  const isActive = pathname === `/sessions/${session.id}`
                   return (
                     <a
                       key={session.id}
                       href={`/sessions/${session.id}`}
                       className={`px-3 py-2 mx-2 flex items-center gap-3 cursor-pointer group transition-all duration-200 rounded-lg ${
-                        isFirst
+                        isActive
                           ? 'bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-300 shadow-sm'
                           : 'text-slate-600 dark:text-slate-400 hover:bg-white/50 dark:hover:bg-slate-800/50'
                       }`}
                     >
-                      <span className={`material-symbols-outlined text-sm ${isFirst ? 'opacity-70' : 'opacity-40'}`}>
-                        {isFirst ? 'chat_bubble' : 'history'}
+                      <span className={`material-symbols-outlined text-sm ${isActive ? 'opacity-70' : 'opacity-40'}`}>
+                        {isActive ? 'chat_bubble' : 'history'}
                       </span>
                       <span className="text-sm font-medium truncate">{session.title}</span>
                     </a>

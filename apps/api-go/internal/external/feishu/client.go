@@ -23,6 +23,7 @@ import (
 const (
 	grantTypeAuthorizationCode = "authorization_code"
 	openAPIAppAccessTokenPath  = "/open-apis/auth/v3/app_access_token/internal"
+	openAPITenantTokenPath     = "/open-apis/auth/v3/tenant_access_token/internal"
 	openAPIUserTokenPath       = "/open-apis/authen/v1/access_token"
 	openAPIRefreshTokenPath    = "/open-apis/authen/v1/refresh_access_token"
 	openAPIUserInfoPath        = "/open-apis/authen/v1/user_info"
@@ -52,6 +53,13 @@ type UserProfile struct {
 	Email           string
 	EnterpriseEmail string
 	AvatarURL       string
+}
+
+type Department struct {
+	DepartmentID     string
+	OpenDepartmentID string
+	Name             string
+	NameEN           string
 }
 
 type Config struct {
@@ -144,6 +152,42 @@ func (c *Client) GetAppAccessToken(ctx context.Context) (string, error) {
 	return response.AppAccessToken, nil
 }
 
+func (c *Client) GetTenantAccessToken(ctx context.Context) (string, error) {
+	if !c.Enabled() {
+		return "", errors.New("feishu sso is not enabled")
+	}
+
+	body, err := json.Marshal(map[string]string{
+		"app_id":     c.cfg.AppID,
+		"app_secret": c.cfg.AppSecret,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.openAPIURL(openAPITenantTokenPath), bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+	var response struct {
+		Code              int    `json:"code"`
+		Msg               string `json:"msg"`
+		TenantAccessToken string `json:"tenant_access_token"`
+	}
+	if err := c.doJSON(req, &response); err != nil {
+		return "", err
+	}
+	if response.Code != 0 {
+		return "", fmt.Errorf("get feishu tenant_access_token failed: %s", response.Msg)
+	}
+	if strings.TrimSpace(response.TenantAccessToken) == "" {
+		return "", errors.New("feishu tenant_access_token is empty")
+	}
+	return response.TenantAccessToken, nil
+}
+
 func (c *Client) ExchangeCodeForUserToken(ctx context.Context, code string) (UserToken, error) {
 	if !c.Enabled() {
 		return UserToken{}, errors.New("feishu sso is not enabled")
@@ -228,6 +272,151 @@ func (c *Client) GetUserInfo(ctx context.Context, userAccessToken string) (UserP
 		EnterpriseEmail: response.Data.EnterpriseEmail,
 		AvatarURL:       response.Data.AvatarURL,
 	}, nil
+}
+
+func (c *Client) ListUserDepartments(ctx context.Context, userIdentifier string, userIDType string) ([]Department, error) {
+	userIdentifier = strings.TrimSpace(userIdentifier)
+	if userIdentifier == "" {
+		return nil, errors.New("feishu user identifier is required")
+	}
+	if !c.Enabled() {
+		return nil, errors.New("feishu sso is not enabled")
+	}
+	switch strings.TrimSpace(userIDType) {
+	case "open_id", "union_id":
+	default:
+		userIDType = "user_id"
+	}
+
+	tenantAccessToken, err := c.GetTenantAccessToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	path := fmt.Sprintf("/open-apis/contact/v3/users/%s?user_id_type=%s&department_id_type=department_id&user_fields=department_path,department_ids,name,status,email,mobile", url.PathEscape(userIdentifier), url.QueryEscape(userIDType))
+	var response struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			User struct {
+				DepartmentIDs  []string `json:"department_ids"`
+				DepartmentPath []struct {
+					DepartmentID   string `json:"department_id"`
+					DepartmentName struct {
+						Name     string `json:"name"`
+						I18nName struct {
+							ZhCN string `json:"zh_cn"`
+							EnUS string `json:"en_us"`
+						} `json:"i18n_name"`
+					} `json:"department_name"`
+					DepartmentPath struct {
+						DepartmentIDs []string `json:"department_ids"`
+						PathName      struct {
+							Name     string `json:"name"`
+							I18nName struct {
+								ZhCN string `json:"zh_cn"`
+								EnUS string `json:"en_us"`
+							} `json:"i18n_name"`
+						} `json:"department_path_name"`
+					} `json:"department_path"`
+				} `json:"department_path"`
+			} `json:"user"`
+			DepartmentIDs []string `json:"department_ids"`
+		} `json:"data"`
+	}
+
+	if err := c.doJSONWithToken(ctx, http.MethodGet, path, tenantAccessToken, nil, &response); err != nil {
+		return nil, err
+	}
+	if response.Code != 0 {
+		return nil, fmt.Errorf("get user profile for departments failed: %s", response.Msg)
+	}
+
+	orderedDepartmentIDs := make([]string, 0, len(response.Data.User.DepartmentIDs))
+	seenDepartmentIDs := make(map[string]struct{}, len(response.Data.User.DepartmentIDs))
+	fromDepartmentPath := make(map[string]Department, len(response.Data.User.DepartmentPath))
+
+	for _, pathItem := range response.Data.User.DepartmentPath {
+		departmentID := strings.TrimSpace(pathItem.DepartmentID)
+		if departmentID == "" {
+			departmentID = firstNonEmpty(pathItem.DepartmentPath.DepartmentIDs...)
+		}
+		if departmentID == "" {
+			continue
+		}
+		name := firstNonEmpty(
+			strings.TrimSpace(pathItem.DepartmentPath.PathName.I18nName.ZhCN),
+			strings.TrimSpace(pathItem.DepartmentPath.PathName.Name),
+			strings.TrimSpace(pathItem.DepartmentName.I18nName.ZhCN),
+			strings.TrimSpace(pathItem.DepartmentName.Name),
+			strings.TrimSpace(pathItem.DepartmentPath.PathName.I18nName.EnUS),
+			strings.TrimSpace(pathItem.DepartmentName.I18nName.EnUS),
+		)
+		fromDepartmentPath[departmentID] = Department{
+			DepartmentID: departmentID,
+			Name:         name,
+		}
+	}
+
+	for _, departmentID := range append(response.Data.User.DepartmentIDs, response.Data.DepartmentIDs...) {
+		departmentID = strings.TrimSpace(departmentID)
+		if departmentID == "" {
+			continue
+		}
+		if _, ok := seenDepartmentIDs[departmentID]; ok {
+			continue
+		}
+		seenDepartmentIDs[departmentID] = struct{}{}
+		orderedDepartmentIDs = append(orderedDepartmentIDs, departmentID)
+	}
+
+	if len(orderedDepartmentIDs) == 0 && len(fromDepartmentPath) > 0 {
+		for departmentID := range fromDepartmentPath {
+			orderedDepartmentIDs = append(orderedDepartmentIDs, departmentID)
+		}
+	}
+
+	if len(orderedDepartmentIDs) == 0 {
+		return nil, nil
+	}
+
+	batchDetails, err := c.batchGetDepartmentDetails(ctx, tenantAccessToken, orderedDepartmentIDs)
+	if err != nil {
+		// 若 batch 接口字段权限未生效，保留从 department_path 提取的名称继续返回。
+		batchDetails = map[string]Department{}
+	}
+
+	departments := make([]Department, 0, len(orderedDepartmentIDs))
+	for _, departmentID := range orderedDepartmentIDs {
+		department := batchDetails[departmentID]
+		if fromPath, ok := fromDepartmentPath[departmentID]; ok {
+			if department.Name == "" {
+				department.Name = fromPath.Name
+			}
+			if department.OpenDepartmentID == "" {
+				department.OpenDepartmentID = fromPath.OpenDepartmentID
+			}
+		}
+		department.DepartmentID = departmentID
+		department.Name = strings.TrimSpace(department.Name)
+		department.NameEN = strings.TrimSpace(department.NameEN)
+		if department.Name == "" {
+			department.Name = departmentID
+		}
+		departments = append(departments, department)
+	}
+
+	return departments, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func (c *Client) CreateTaskDoc(ctx context.Context, sessionTitle string, task model.Task) (string, error) {
@@ -422,6 +611,82 @@ func (c *Client) requestUserToken(ctx context.Context, path string, appAccessTok
 		AccessTokenExpiresAt:  now.Add(time.Duration(response.Data.ExpiresIn) * time.Second),
 		RefreshTokenExpiresAt: now.Add(time.Duration(response.Data.RefreshExpiresIn) * time.Second),
 	}, nil
+}
+
+func (c *Client) batchGetDepartmentDetails(ctx context.Context, tenantAccessToken string, departmentIDs []string) (map[string]Department, error) {
+	results := make(map[string]Department, len(departmentIDs))
+	for _, group := range chunkStrings(departmentIDs, 50) {
+		items, err := c.requestDepartmentBatch(ctx, tenantAccessToken, group)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			departmentID := strings.TrimSpace(item.DepartmentID)
+			if departmentID == "" {
+				continue
+			}
+			results[departmentID] = item
+		}
+	}
+	return results, nil
+}
+
+func (c *Client) requestDepartmentBatch(ctx context.Context, tenantAccessToken string, departmentIDs []string) ([]Department, error) {
+	if len(departmentIDs) == 0 {
+		return nil, nil
+	}
+
+	paths := []string{
+		"/open-apis/contact/v3/departments/batch_get?department_id_type=department_id",
+		"/open-apis/contact/v3/departments/batch?department_id_type=department_id",
+	}
+
+	var lastErr error
+	for _, path := range paths {
+		var response struct {
+			Code int    `json:"code"`
+			Msg  string `json:"msg"`
+			Data struct {
+				Items []struct {
+					DepartmentID     string `json:"department_id"`
+					OpenDepartmentID string `json:"open_department_id"`
+					Name             string `json:"name"`
+					NameEN           string `json:"name_en"`
+				} `json:"items"`
+			} `json:"data"`
+		}
+
+		err := c.doJSONWithToken(ctx, http.MethodPost, path, tenantAccessToken, map[string]any{
+			"department_ids": departmentIDs,
+		}, &response)
+		if err != nil {
+			if strings.Contains(err.Error(), "status=404") {
+				lastErr = err
+				continue
+			}
+			return nil, err
+		}
+		if response.Code != 0 {
+			lastErr = fmt.Errorf("batch get departments failed: %s", response.Msg)
+			continue
+		}
+
+		items := make([]Department, 0, len(response.Data.Items))
+		for _, item := range response.Data.Items {
+			items = append(items, Department{
+				DepartmentID:     strings.TrimSpace(item.DepartmentID),
+				OpenDepartmentID: strings.TrimSpace(item.OpenDepartmentID),
+				Name:             strings.TrimSpace(item.Name),
+				NameEN:           strings.TrimSpace(item.NameEN),
+			})
+		}
+		return items, nil
+	}
+
+	if lastErr == nil {
+		lastErr = errors.New("batch get departments failed")
+	}
+	return nil, lastErr
 }
 
 func (c *Client) ensureBitableTarget(ctx context.Context, task model.Task) (bitableTarget, bool, error) {
@@ -686,6 +951,25 @@ func stringValue(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+func chunkStrings(items []string, size int) [][]string {
+	if size <= 0 {
+		return [][]string{items}
+	}
+	if len(items) == 0 {
+		return nil
+	}
+
+	chunks := make([][]string, 0, (len(items)+size-1)/size)
+	for start := 0; start < len(items); start += size {
+		end := start + size
+		if end > len(items) {
+			end = len(items)
+		}
+		chunks = append(chunks, items[start:end])
+	}
+	return chunks
 }
 
 func formatTaskDate(value *time.Time) string {

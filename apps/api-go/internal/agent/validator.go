@@ -115,6 +115,8 @@ func normalizeRole(value string, taskType model.TaskType) model.Role {
 		return model.RoleAdmin
 	case string(model.RoleBackend):
 		return model.RoleBackend
+	case string(model.RoleOther):
+		return model.RoleOther
 	}
 
 	switch taskType {

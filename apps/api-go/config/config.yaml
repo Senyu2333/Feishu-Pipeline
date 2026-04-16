@@ -14,13 +14,13 @@ database:
   path: "./data/requirement-delivery.db"
 
 feishu:
-  enabled: false
-  app_id: ""
-  app_secret: ""
-  redirect_url: ""
+  enabled: true
+  app_id: "cli_a954fa893fb85bc6"
+  app_secret: "aYDUH3soLMlwONsU262qpcziZmjVDwOe"
+  redirect_url: "http://localhost:5173/auth/callback"
   open_base_url: "https://open.feishu.cn"
   bot_name: "需求交付机器人"
-  receive_id_type: "user_id"
+  receive_id_type: "open_id"
   doc_folder_token: ""
   bitable_name: "需求排期"
   bitable_folder_token: ""

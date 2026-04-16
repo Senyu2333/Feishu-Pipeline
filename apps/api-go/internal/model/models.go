@@ -8,6 +8,7 @@ const (
 	RoleProduct  Role = "product"
 	RoleFrontend Role = "frontend"
 	RoleBackend  Role = "backend"
+	RoleOther    Role = "other"
 	RoleAdmin    Role = "admin"
 )
 

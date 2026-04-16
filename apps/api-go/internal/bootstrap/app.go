@@ -81,6 +81,7 @@ func NewApplication(ctx context.Context, configPath string, version string) (*Ap
 	taskService := service.NewTaskService(repository, feishuClient)
 	adminService := service.NewAdminService(repository)
 	publishService := service.NewPublishService(repository, authService, agentEngine, feishuClient)
+	sessionService.SetPublisher(publishService)
 
 	runner := job.NewRunner(nil, publishService)
 	publishService.SetQueue(runner)

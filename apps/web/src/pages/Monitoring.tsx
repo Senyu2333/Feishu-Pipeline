@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import TopNav from '../components/TopNav'
 import Sidebar from '../components/Sidebar'
 import {
   Card,
@@ -15,7 +14,6 @@ import {
 import {
   PauseCircleOutlined,
   ReloadOutlined,
-  CloudSyncOutlined,
 } from '@ant-design/icons'
 
 const pipelineSteps = [
@@ -38,12 +36,13 @@ const metricsBars = [28, 32, 45, 38, 52, 48, 55, 50, 58, 62, 54, 68, 64, 58, 48,
 
 export default function Monitoring() {
   const [metricTab, setMetricTab] = useState('CPU')
+  // 左侧导航固定 80px
+  const sidebarWidth = 80
 
   return (
     <div className="min-h-screen bg-background">
-      <TopNav />
       <Sidebar />
-      <main className="ml-64 mt-14 h-[calc(100vh-3.5rem)] overflow-y-auto p-6">
+      <main className="h-screen overflow-y-auto p-6 transition-all duration-300" style={{ marginLeft: `${sidebarWidth}px` }}>
         <div className="flex justify-between items-start mb-5">
           <div>
             <div className="text-sm text-on-surface-variant mb-1">

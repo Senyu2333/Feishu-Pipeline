@@ -1,9 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Badge, Avatar, Space, Button, Input, Dropdown, message } from 'antd'
+import { Avatar, Space, Button, Input, Dropdown, message } from 'antd'
 import {
-  BellOutlined,
-  QuestionCircleOutlined,
-  SettingOutlined,
   SearchOutlined,
   UserOutlined,
   LoginOutlined,
@@ -22,26 +19,11 @@ const API_BASE = '/api'
 export default function TopNav({ showSearch }: { showSearch?: boolean }) {
   const [user, setUser] = useState<UserInfo | null>(null)
   const [loading, setLoading] = useState(true)
-  const [feishuEnabled, setFeishuEnabled] = useState(false)
 
   // 检查登录状态
   useEffect(() => {
     checkAuth()
-    checkFeishuConfig()
   }, [])
-
-  const checkFeishuConfig = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/auth/feishu/config`)
-      if (res.ok) {
-        const config = await res.json()
-        const data = config.data || config
-        setFeishuEnabled(data.enabled && !!data.appId)
-      }
-    } catch (e) {
-      setFeishuEnabled(false)
-    }
-  }
 
   const checkAuth = async () => {
     try {

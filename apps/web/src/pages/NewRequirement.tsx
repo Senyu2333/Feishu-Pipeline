@@ -1,15 +1,15 @@
 import { Card, Form, Input, Select, Radio, DatePicker, Button, Space } from 'antd'
-import TopNav from '../components/TopNav'
 import Sidebar from '../components/Sidebar'
 
 export default function NewRequirement() {
   const [form] = Form.useForm()
+  // 左侧导航固定 80px
+  const sidebarWidth = 80
 
   return (
     <div className="min-h-screen bg-background">
-      <TopNav />
       <Sidebar />
-      <main className="ml-64 mt-14 h-[calc(100vh-3.5rem)] overflow-y-auto p-6">
+      <main className="h-screen overflow-y-auto p-6 transition-all duration-300" style={{ marginLeft: `${sidebarWidth}px` }}>
         <div className="mb-6">
           <div className="flex items-center gap-2 text-sm mb-3">
             <span className="text-on-surface-variant">Creation</span>

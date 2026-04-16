@@ -1,68 +1,265 @@
 import { Link, useLocation } from '@tanstack/react-router'
-import { Button } from 'antd'
+import { useEffect, useState, useRef } from 'react'
 
-const menuItems = [
-  { icon: 'chat_bubble', label: 'Home', to: '/' },
-  { icon: 'add_box', label: 'Creation', to: '/new-requirement' },
-  { icon: 'account_tree', label: 'Workflows', to: '/workflows' },
-  { icon: 'insights', label: 'Monitoring', to: '/monitoring' },
+const mainNavItems = [
+  { icon: 'home', label: 'Home', to: '/' },
+  { icon: 'add_circle', label: 'Creation', to: '/new-requirement' },
+  { icon: 'schema', label: 'Workflows', to: '/workflows' },
+  { icon: 'monitoring', label: 'Monitoring', to: '/monitoring' },
   { icon: 'fact_check', label: 'Approvals', to: '/approvals' },
-  { icon: 'package_2', label: 'Delivery', to: '/delivery' },
+  { icon: 'local_shipping', label: 'Delivery', to: '/delivery' },
 ]
 
-export default function Sidebar() {
+interface User {
+  id: string
+  name: string
+  avatar: string
+}
+
+interface Session {
+  id: string
+  title: string
+  summary: string
+  status: string
+  ownerName: string
+  messageCount: number
+  updatedAt: string
+}
+
+interface SidebarProps {
+  convCollapsed?: boolean
+  onConvCollapse?: (collapsed: boolean) => void
+}
+
+export default function Sidebar({ convCollapsed = false, onConvCollapse }: SidebarProps) {
   const location = useLocation()
   const pathname = location.pathname
+  const [user, setUser] = useState<User | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [showMenu, setShowMenu] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [sessions, setSessions] = useState<Session[]>([])
+  const [sessionsLoading, setSessionsLoading] = useState(true)
+
+  // 只在主页显示右侧会话栏
+  const showConversationPanel = pathname === '/'
+
+  const isActive = (to: string) => pathname === to || (to !== '/' && pathname.startsWith(to))
+
+  const toggleConvCollapse = () => {
+    onConvCollapse?.(!convCollapsed)
+  }
+
+  // 获取当前用户状态
+  useEffect(() => {
+    fetch('/api/me', { credentials: 'include' })
+      .then(res => {
+        if (res.ok) return res.json()
+        throw new Error('Not logged in')
+      })
+      .then(data => {
+        if (data.data) setUser(data.data)
+      })
+      .catch(() => setUser(null))
+      .finally(() => setLoading(false))
+  }, [])
+
+  // 获取会话列表
+  useEffect(() => {
+    fetch('/api/sessions', { credentials: 'include' })
+      .then(res => {
+        if (res.ok) return res.json()
+        throw new Error('Failed to load sessions')
+      })
+      .then(data => {
+        if (data.data) setSessions(data.data)
+      })
+      .catch(() => setSessions([]))
+      .finally(() => setSessionsLoading(false))
+  }, [])
+
+  // 点击外部关闭菜单
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // 跳转到飞书登录
+  const handleLogin = () => {
+    window.location.href = '/api/auth/feishu/login'
+  }
+
+  // 登出
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include'
+      })
+      setUser(null)
+      setShowMenu(false)
+    } catch (err) {
+      console.error('Logout failed:', err)
+    }
+  }
 
   return (
-    <aside className="fixed left-0 top-14 h-[calc(100vh-3.5rem)] flex flex-col p-4 w-64 bg-[#e6f6ff] z-40">
-      <div className="flex items-center gap-3 px-3 py-4 mb-4">
-        <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-lg">
-          <span className="material-symbols-filled text-white">cloud_done</span>
+    <>
+      {/* COLUMN 1: Global Navigation (SideNavBar - main_nav) - 固定宽度 80px */}
+      <aside className="fixed left-0 top-0 h-full flex flex-col z-40 bg-slate-50 dark:bg-slate-900 w-20 border-r border-slate-200/50 dark:border-slate-800/50">
+        <div className="flex items-center justify-center h-20">
+          <span className="text-xl font-bold tracking-tight text-blue-800 dark:text-blue-300">AF</span>
         </div>
-        <div>
-          <p className="text-sm font-black text-[#001f2a] leading-none">Project Alpha</p>
-          <p className="text-[10px] uppercase tracking-widest text-[#001f2a]/50 font-bold mt-1">Enterprise AI</p>
+        <nav className="flex-1 flex flex-col items-center py-4 space-y-6">
+          {mainNavItems.map((item) => {
+            const active = isActive(item.to)
+            return (
+              <Link
+                key={item.label}
+                to={item.to}
+                title={item.label}
+                className={`relative p-3 rounded-xl transition-all duration-150 ${
+                  active
+                    ? 'bg-blue-100/50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 after:content-[""] after:absolute after:left-0 after:w-1 after:h-8 after:bg-blue-600 after:rounded-r-full scale-95'
+                    : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/50'
+                }`}
+              >
+                <span className="material-symbols-outlined">{item.icon}</span>
+              </Link>
+            )
+          })}
+        </nav>
+        <div className="pb-8 flex flex-col items-center space-y-4 relative">
+          <button className="text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition-colors p-3 rounded-xl">
+            <span className="material-symbols-outlined">settings</span>
+          </button>
+          
+          {/* 用户头像 / 登录按钮 */}
+          <div ref={menuRef} className="relative">
+            {loading ? (
+              // 加载中
+              <div className="w-10 h-10 rounded-full bg-surface-container-highest flex items-center justify-center border border-outline-variant/30">
+                <span className="material-symbols-outlined text-slate-400 text-sm animate-spin">progress_activity</span>
+              </div>
+            ) : user ? (
+              // 已登录 - 显示头像
+              <button
+                onClick={() => setShowMenu(!showMenu)}
+                className="w-10 h-10 rounded-full bg-surface-container-highest flex items-center justify-center overflow-hidden border border-outline-variant/30 hover:ring-2 hover:ring-primary/30 transition-all"
+              >
+                {user.avatar ? (
+                  <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
+                ) : (
+                  <span className="material-symbols-outlined text-slate-500">person</span>
+                )}
+              </button>
+            ) : (
+              // 未登录 - 显示登录按钮
+              <button
+                onClick={handleLogin}
+                className="w-10 h-10 rounded-full bg-primary-container flex items-center justify-center border border-primary/20 hover:bg-primary transition-all group"
+                title="Login with Feishu"
+              >
+                <span className="material-symbols-outlined text-on-primary-container group-hover:text-white text-sm">login</span>
+              </button>
+            )}
+
+            {/* 登出菜单 */}
+            {showMenu && user && (
+              <div className="absolute bottom-full left-0 mb-2 w-48 bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 py-2 animate-fade-in">
+                <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-700">
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{user.name}</p>
+                  <p className="text-xs text-slate-500 truncate">{user.id}</p>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-sm">logout</span>
+                  Logout
+                </button>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      </aside>
 
-      <Link to="/new-requirement">
-        <button className="mb-6 mx-2 py-3 px-4 bg-gradient-to-r from-primary to-primary-container text-white rounded-xl font-bold text-sm shadow-md hover:shadow-lg transition-all active:scale-[0.98] w-[calc(100%-1rem)]">
-          <span className="flex items-center justify-center gap-2">
-            <span className="material-symbols-outlined text-sm">add</span>
-            New Requirement
-          </span>
-        </button>
-      </Link>
-
-      <nav className="flex-1 flex flex-col gap-1 overflow-y-auto">
-        {menuItems.map((item) => {
-          const isActive = pathname === item.to || (item.to !== '/' && pathname.startsWith(item.to))
-          return (
-            <Link
-              key={item.label}
-              to={item.to}
-              className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${isActive 
-                ? 'bg-white text-primary font-bold border-l-4 border-primary translate-x-1' 
-                : 'text-[#001f2a]/70 hover:bg-[#c9e7f7]'}`}
-            >
-              <span className="material-symbols-outlined">{item.icon}</span>
-              <span className="font-medium text-sm">{item.label}</span>
-            </Link>
-          )
-        })}
-      </nav>
-
-      <div className="mt-auto pt-4 border-t border-[#001f2a]/5 flex flex-col gap-1">
-        <a href="#" className="flex items-center gap-3 text-[#001f2a]/70 px-3 py-2 hover:bg-[#c9e7f7] rounded-lg transition-all">
-          <span className="material-symbols-outlined">inventory_2</span>
-          <span className="font-medium text-sm">Archive</span>
-        </a>
-        <a href="#" className="flex items-center gap-3 text-[#001f2a]/70 px-3 py-2 hover:bg-[#c9e7f7] rounded-lg transition-all">
-          <span className="material-symbols-outlined">settings</span>
-          <span className="font-medium text-sm">Settings</span>
-        </a>
-      </div>
-    </aside>
+      {/* COLUMN 2: Contextual Navigation (SideNavBar - sub_nav) - 只在主页显示，可折叠 */}
+      {showConversationPanel && (
+        <>
+          {/* 折叠/展开按钮 - 固定在左侧导航旁边 */}
+          <button
+            onClick={toggleConvCollapse}
+            title={convCollapsed ? 'Expand Conversations' : 'Collapse Conversations'}
+            className={`fixed top-1/2 -translate-y-1/2 w-6 h-12 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full flex items-center justify-center shadow-md hover:shadow-lg transition-all z-50 ${convCollapsed ? 'left-20' : 'left-[296px]'}`}
+          >
+            <span className="material-symbols-outlined text-xs text-slate-500">
+              {convCollapsed ? 'chevron_right' : 'chevron_left'}
+            </span>
+          </button>
+          
+          {/* Conversations 栏 */}
+          <aside className={`fixed left-20 top-0 h-full flex flex-col z-30 bg-slate-100/80 dark:bg-slate-950/80 backdrop-blur-xl border-r border-slate-200/30 dark:border-slate-800/30 transition-all duration-300 ${convCollapsed ? 'w-0 opacity-0 overflow-hidden' : 'w-64 opacity-100'}`}>
+            <div className="px-6 h-20 flex flex-col justify-center flex-shrink-0">
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Conversations</h2>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Last 7 days</p>
+            </div>
+            <div className="px-4 mb-6 flex-shrink-0">
+              <Link to="/new-requirement">
+                <button className="w-full py-3 px-4 flex items-center justify-center gap-2 bg-primary-container text-on-primary-container rounded-xl shadow-sm hover:shadow-md transition-all duration-300 group">
+                  <span className="material-symbols-outlined text-sm">add</span>
+                  <span className="text-sm font-semibold">New Chat</span>
+                </button>
+              </Link>
+            </div>
+            <nav className="flex-1 overflow-y-auto space-y-1 min-w-0">
+              <div className="px-6 mb-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Recent Chats</span>
+              </div>
+              {sessionsLoading ? (
+                <div className="px-6 py-4 text-center">
+                  <span className="material-symbols-outlined text-slate-400 text-sm animate-spin">progress_activity</span>
+                </div>
+              ) : sessions.length === 0 ? (
+                <div className="px-6 py-4 text-xs text-slate-400 text-center">
+                  No conversations yet
+                </div>
+              ) : (
+                sessions.map((session, index) => {
+                  const isFirst = index === 0
+                  return (
+                    <a
+                      key={session.id}
+                      href={`/sessions/${session.id}`}
+                      className={`px-3 py-2 mx-2 flex items-center gap-3 cursor-pointer group transition-all duration-200 rounded-lg ${
+                        isFirst
+                          ? 'bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-300 shadow-sm'
+                          : 'text-slate-600 dark:text-slate-400 hover:bg-white/50 dark:hover:bg-slate-800/50'
+                      }`}
+                    >
+                      <span className={`material-symbols-outlined text-sm ${isFirst ? 'opacity-70' : 'opacity-40'}`}>
+                        {isFirst ? 'chat_bubble' : 'history'}
+                      </span>
+                      <span className="text-sm font-medium truncate">{session.title}</span>
+                    </a>
+                  )
+                })
+              )}
+            </nav>
+            <div className="p-4 bg-white/40 dark:bg-slate-900/40 border-t border-slate-200/20 flex-shrink-0">
+              <div className="flex items-center gap-3 text-xs text-slate-500">
+                <span className="material-symbols-outlined text-sm">cloud_done</span>
+                <span>All changes synced</span>
+              </div>
+            </div>
+          </aside>
+        </>
+      )}
+    </>
   )
 }

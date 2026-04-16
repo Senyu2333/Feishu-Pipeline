@@ -17,7 +17,6 @@ import {
   FlagOutlined,
   NodeExpandOutlined,
 } from '@ant-design/icons'
-import TopNav from '../components/TopNav'
 import Sidebar from '../components/Sidebar'
 
 // 节点类型定义
@@ -414,11 +413,13 @@ export default function Workflows() {
   // 节点右键菜单
   // const getNodeContextMenuItems = (): MenuProps['items'] => [
 
+  // 左侧导航固定 80px
+  const sidebarWidth = 80
+
   return (
     <div className="min-h-screen bg-background">
-      <TopNav showSearch />
       <Sidebar />
-      <main className="ml-64 mt-14 h-[calc(100vh-3.5rem)] flex flex-col overflow-hidden bg-surface-dim">
+      <main className="h-screen flex flex-col overflow-hidden bg-surface-dim transition-all duration-300" style={{ marginLeft: `${sidebarWidth}px` }}>
         {/* Toolbar */}
         <div className="flex items-center justify-between px-4 py-2 bg-surface-container-low border-b border-outline-variant">
           <div className="flex items-center gap-2">

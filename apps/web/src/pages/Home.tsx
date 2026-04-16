@@ -1,4 +1,5 @@
-import { Card, Badge, Avatar } from 'antd'
+import { useEffect, useMemo, useState } from 'react'
+import { Avatar, Button, Card, Input, message as antdMessage } from 'antd'
 import TopNav from '../components/TopNav'
 import Sidebar from '../components/Sidebar'
 
@@ -8,7 +9,205 @@ const promptItems = [
   { key: 'sla', label: 'SLA Definition' },
 ]
 
+type ChatRole = 'user' | 'assistant' | 'system'
+
+type ChatMessage = {
+  id: string
+  role: ChatRole
+  content: string
+}
+
+type SessionDetail = {
+  session: {
+    id: string
+    title: string
+  }
+  messages: Array<{
+    id: string
+    role: ChatRole
+    content: string
+  }>
+}
+
+type LocalDraftSession = {
+  localID: string
+  title: string
+  hasChatted: boolean
+  serverSessionID?: string
+}
+
+const activeSessionKey = 'activeRequirementSessionId'
+const draftSessionKey = 'activeRequirementSessionDraft'
+
+function readDraftSession(): LocalDraftSession | null {
+  const raw = localStorage.getItem(draftSessionKey)
+  if (!raw) {
+    return null
+  }
+  try {
+    return JSON.parse(raw) as LocalDraftSession
+  } catch {
+    localStorage.removeItem(draftSessionKey)
+    return null
+  }
+}
+
+function saveDraftSession(session: LocalDraftSession): void {
+  localStorage.setItem(draftSessionKey, JSON.stringify(session))
+  localStorage.setItem(activeSessionKey, session.localID)
+}
+
+function mapMessages(messages: SessionDetail['messages']): ChatMessage[] {
+  return messages.map((item) => ({
+    id: item.id,
+    role: item.role,
+    content: item.content,
+  }))
+}
+
 export default function Home() {
+  const [draftSession, setDraftSession] = useState<LocalDraftSession | null>(readDraftSession())
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [input, setInput] = useState('')
+  const [sending, setSending] = useState(false)
+
+  useEffect(() => {
+    const listener = () => {
+      setDraftSession(readDraftSession())
+      setMessages([])
+    }
+    window.addEventListener('requirement:session-created', listener)
+    return () => window.removeEventListener('requirement:session-created', listener)
+  }, [])
+
+  useEffect(() => {
+    if (!draftSession?.serverSessionID) {
+      return
+    }
+
+    void (async () => {
+      try {
+        const response = await fetch(`/api/sessions/${draftSession.serverSessionID}`, {
+          credentials: 'include',
+        })
+        if (!response.ok) {
+          return
+        }
+        const payload = (await response.json()) as { data?: SessionDetail }
+        if (payload.data) {
+          setMessages(mapMessages(payload.data.messages))
+        }
+      } catch {
+        // ignore stale session fetch errors
+      }
+    })()
+  }, [draftSession?.serverSessionID])
+
+  const chatMessages = useMemo(() => {
+    if (messages.length > 0) {
+      return messages
+    }
+    return [
+      {
+        id: 'welcome',
+        role: 'assistant' as const,
+        content: 'Welcome to the Requirement Architect. I am ready to help you structure your project. Describe your requirement to start.',
+      },
+    ]
+  }, [messages])
+
+  const handleSend = async () => {
+    const content = input.trim()
+    if (!content || sending) {
+      return
+    }
+
+    const current = draftSession ?? {
+      localID: `draft-${Date.now()}`,
+      title: `新需求 ${new Date().toLocaleString()}`,
+      hasChatted: false,
+    }
+
+    if (!draftSession) {
+      saveDraftSession(current)
+      setDraftSession(current)
+    }
+
+    setInput('')
+    setSending(true)
+
+    const optimisticUserMessage: ChatMessage = {
+      id: `local-${Date.now()}`,
+      role: 'user',
+      content,
+    }
+    setMessages((prev) => [...prev, optimisticUserMessage])
+
+    try {
+      let response: Response
+      if (!current.serverSessionID) {
+        response = await fetch('/api/sessions', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: current.title,
+            prompt: content,
+          }),
+        })
+      } else {
+        response = await fetch(`/api/sessions/${current.serverSessionID}/messages`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content }),
+        })
+      }
+
+      if (!response.ok) {
+        throw new Error('发送消息失败')
+      }
+
+      const payload = (await response.json()) as { data?: SessionDetail }
+      if (!payload.data) {
+        throw new Error('响应数据不完整')
+      }
+
+      const nextDraft: LocalDraftSession = {
+        ...current,
+        hasChatted: true,
+        serverSessionID: payload.data.session.id,
+      }
+      saveDraftSession(nextDraft)
+      setDraftSession(nextDraft)
+      setMessages(mapMessages(payload.data.messages))
+
+      try {
+        const autoPublishResponse = await fetch(`/api/sessions/${payload.data.session.id}/auto-publish-check`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content }),
+        })
+        if (autoPublishResponse.ok) {
+          const autoPayload = (await autoPublishResponse.json()) as {
+            data?: { triggered?: boolean; reason?: string }
+          }
+          if (autoPayload.data?.triggered) {
+            antdMessage.success('检测到排期需求，已自动触发发布流程')
+          }
+        }
+      } catch {
+        // auto publish check is best-effort
+      }
+    } catch (error) {
+      setMessages((prev) => prev.filter((item) => item.id !== optimisticUserMessage.id))
+      antdMessage.error(error instanceof Error ? error.message : '发送失败')
+    } finally {
+      setSending(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <TopNav />
@@ -17,77 +216,50 @@ export default function Home() {
         {/* Welcome Header */}
         <div className="pt-12 pb-6 px-12 text-center">
           <h1 className="text-4xl font-extrabold tracking-tight text-on-surface mb-2">Hello, Designer</h1>
-          <p className="text-on-surface-variant font-medium text-lg">Define your new enterprise requirements through guided dialogue.</p>
+          <p className="text-on-surface-variant font-medium text-lg">
+            {draftSession ? `当前会话：${draftSession.title}` : 'Define your new enterprise requirements through guided dialogue.'}
+          </p>
         </div>
 
         {/* Chat Conversation Container */}
         <div className="flex-1 overflow-y-auto px-6 md:px-24 py-8 flex flex-col gap-8 scroll-smooth">
-          {/* AI Message */}
-          <div className="flex items-start gap-4 max-w-[80%]">
-            <div className="w-8 h-8 rounded-lg bg-surface-container-high flex-shrink-0 flex items-center justify-center">
-              <span className="material-symbols-outlined text-primary text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>auto_awesome</span>
-            </div>
-            <div className="bg-surface-container-lowest p-5 rounded-2xl rounded-tl-none shadow-sm border border-outline-variant/10">
-              <p className="text-sm leading-relaxed text-on-surface">Welcome to the Requirement Architect. I'm ready to help you structure your project. What type of requirement are we looking at today?</p>
-              <div className="flex flex-wrap gap-2 mt-4">
-                {promptItems.map(item => (
-                  <button key={item.key} className="px-4 py-2 bg-surface-container-low hover:bg-surface-container-high text-primary text-xs font-bold rounded-full transition-all border border-primary/5">
+          {chatMessages.map((item) => {
+            const isUser = item.role === 'user'
+            return (
+              <div key={item.id} className={`flex items-start gap-4 max-w-[85%] ${isUser ? 'self-end flex-row-reverse' : ''}`}>
+                <div className={`w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center ${isUser ? 'bg-primary shadow-md' : 'bg-surface-container-high'}`}>
+                  {isUser ? (
+                    <span className="material-symbols-outlined text-white text-sm">person</span>
+                  ) : (
+                    <span className="material-symbols-outlined text-primary text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>
+                      auto_awesome
+                    </span>
+                  )}
+                </div>
+                <div className={`p-5 rounded-2xl shadow-sm border ${isUser ? 'bg-primary text-white rounded-tr-none border-primary/10' : 'bg-surface-container-lowest rounded-tl-none border-outline-variant/10'}`}>
+                  <p className={`text-sm leading-relaxed whitespace-pre-wrap ${isUser ? 'text-white' : 'text-on-surface'}`}>{item.content}</p>
+                </div>
+              </div>
+            )
+          })}
+
+          {messages.length === 0 ? (
+            <Card size="small" className="!rounded-2xl !border-0 !shadow-sm max-w-[420px]" style={{ background: 'linear-gradient(135deg, #f0f7ff 0%, #e8f2fc 100%)' }}>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2 font-semibold">
+                  <Avatar size="small" className="!bg-primary" icon={<span className="material-symbols-outlined text-white text-xs">auto_awesome</span>} />
+                  推荐起手
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {promptItems.map((item) => (
+                  <Button key={item.key} size="small" onClick={() => setInput(item.label)}>
                     {item.label}
-                  </button>
+                  </Button>
                 ))}
               </div>
-            </div>
-          </div>
-
-          {/* User Message */}
-          <div className="flex items-start gap-4 max-w-[80%] self-end flex-row-reverse">
-            <div className="w-8 h-8 rounded-lg bg-primary flex-shrink-0 flex items-center justify-center shadow-md">
-              <span className="material-symbols-outlined text-white text-sm">person</span>
-            </div>
-            <div className="bg-primary text-white p-5 rounded-2xl rounded-tr-none shadow-md">
-              <p className="text-sm leading-relaxed">I want to create a new User Story for the authentication flow of the Alpha App. It needs to include biometric support.</p>
-            </div>
-          </div>
-
-          {/* AI Message with Card */}
-          <div className="flex items-start gap-4 max-w-[85%]">
-            <div className="w-8 h-8 rounded-lg bg-surface-container-high flex-shrink-0 flex items-center justify-center">
-              <span className="material-symbols-outlined text-primary text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>auto_awesome</span>
-            </div>
-            <div className="flex flex-col gap-4 w-full">
-              <div className="bg-surface-container-lowest p-5 rounded-2xl rounded-tl-none shadow-sm border border-outline-variant/10">
-                <p className="text-sm leading-relaxed text-on-surface">Understood. I've initialized a draft for <strong>Alpha App: Biometric Auth Flow</strong>. Here is a summary of the core logic I'm drafting based on your request:</p>
-              </div>
-              <Card
-                size="small"
-                className="!rounded-2xl !border-0 !shadow-sm max-w-[420px]"
-                style={{ background: 'linear-gradient(135deg, #f0f7ff 0%, #e8f2fc 100%)' }}
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2 font-semibold">
-                    <Avatar size="small" className="!bg-primary" icon={<span className="material-symbols-outlined text-white text-xs">auto_awesome</span>} />
-                    Draft: Requirement #1042
-                  </div>
-                  <Badge className="!bg-surface-container-high !text-primary">IN PROGRESS</Badge>
-                </div>
-                <div className="flex gap-8 mb-3">
-                  <div>
-                    <div className="text-xs font-semibold text-gray-400 mb-1">ACTOR</div>
-                    <div className="text-sm font-medium">End-User (Mobile)</div>
-                  </div>
-                  <div>
-                    <div className="text-xs font-semibold text-gray-400 mb-1">COMPLEXITY</div>
-                    <div className="w-12 h-1 bg-gray-200 rounded overflow-hidden">
-                      <div className="w-3/5 h-full bg-primary rounded" />
-                    </div>
-                  </div>
-                </div>
-                <blockquote className="m-0 pl-3 border-l-2 text-gray-500 italic text-sm">
-                  "As a user, I want to use FaceID or TouchID so that I can log in securely without typing my password every time."
-                </blockquote>
-              </Card>
-            </div>
-          </div>
+            </Card>
+          ) : null}
         </div>
 
         {/* Input Area */}
@@ -99,9 +271,22 @@ export default function Home() {
             <input
               type="text"
               placeholder="Describe your requirement..."
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  void handleSend()
+                }
+              }}
               className="flex-1 bg-transparent border-0 outline-none text-on-surface placeholder:text-on-surface/40"
             />
-            <button type="button" className="w-8 h-8 rounded-full border-0 bg-primary text-white cursor-pointer flex items-center justify-center hover:opacity-90">
+            <button
+              type="button"
+              disabled={sending}
+              onClick={() => void handleSend()}
+              className="w-8 h-8 rounded-full border-0 bg-primary text-white cursor-pointer flex items-center justify-center hover:opacity-90 disabled:opacity-50"
+            >
               <span className="material-symbols-outlined text-sm">send</span>
             </button>
           </div>

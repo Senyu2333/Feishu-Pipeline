@@ -1,5 +1,5 @@
-import { Link, useLocation } from '@tanstack/react-router'
-import { Button } from 'antd'
+import { Link, useLocation, useNavigate } from '@tanstack/react-router'
+import { message } from 'antd'
 
 const menuItems = [
   { icon: 'chat_bubble', label: 'Home', to: '/' },
@@ -12,7 +12,65 @@ const menuItems = [
 
 export default function Sidebar() {
   const location = useLocation()
+  const navigate = useNavigate()
   const pathname = location.pathname
+  const creatingSessionKey = 'creatingRequirementSession'
+  const activeSessionKey = 'activeRequirementSessionId'
+  const draftSessionKey = 'activeRequirementSessionDraft'
+
+  type LocalDraftSession = {
+    localID: string
+    title: string
+    hasChatted: boolean
+    serverSessionID?: string
+  }
+
+  const readDraftSession = (): LocalDraftSession | null => {
+    const raw = localStorage.getItem(draftSessionKey)
+    if (!raw) {
+      return null
+    }
+    try {
+      return JSON.parse(raw) as LocalDraftSession
+    } catch {
+      localStorage.removeItem(draftSessionKey)
+      return null
+    }
+  }
+
+  const handleNewRequirement = async () => {
+    const activeDraft = readDraftSession()
+    if (activeDraft && !activeDraft.hasChatted) {
+      message.info('当前已有未发送消息的会话')
+      await navigate({ to: '/' })
+      return
+    }
+
+    if (sessionStorage.getItem(creatingSessionKey) === '1') {
+      return
+    }
+
+    sessionStorage.setItem(creatingSessionKey, '1')
+    try {
+      const localID = `draft-${Date.now()}`
+      const title = `新需求 ${new Date().toLocaleString()}`
+      const draft: LocalDraftSession = {
+        localID,
+        title,
+        hasChatted: false,
+      }
+
+      localStorage.setItem(activeSessionKey, localID)
+      localStorage.setItem(draftSessionKey, JSON.stringify(draft))
+      window.dispatchEvent(new CustomEvent('requirement:session-created', { detail: { sessionID: localID } }))
+      await navigate({ to: '/' })
+      message.success('已创建本地需求会话')
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '创建会话失败')
+    } finally {
+      sessionStorage.removeItem(creatingSessionKey)
+    }
+  }
 
   return (
     <aside className="fixed left-0 top-14 h-[calc(100vh-3.5rem)] flex flex-col p-4 w-64 bg-[#e6f6ff] z-40">
@@ -26,14 +84,16 @@ export default function Sidebar() {
         </div>
       </div>
 
-      <Link to="/new-requirement">
-        <button className="mb-6 mx-2 py-3 px-4 bg-gradient-to-r from-primary to-primary-container text-white rounded-xl font-bold text-sm shadow-md hover:shadow-lg transition-all active:scale-[0.98] w-[calc(100%-1rem)]">
-          <span className="flex items-center justify-center gap-2">
-            <span className="material-symbols-outlined text-sm">add</span>
-            New Requirement
-          </span>
-        </button>
-      </Link>
+      <button
+        type="button"
+        onClick={() => void handleNewRequirement()}
+        className="mb-6 mx-2 py-3 px-4 bg-gradient-to-r from-primary to-primary-container text-white rounded-xl font-bold text-sm shadow-md hover:shadow-lg transition-all active:scale-[0.98] w-[calc(100%-1rem)]"
+      >
+        <span className="flex items-center justify-center gap-2">
+          <span className="material-symbols-outlined text-sm">add</span>
+          New Requirement
+        </span>
+      </button>
 
       <nav className="flex-1 flex flex-col gap-1 overflow-y-auto">
         {menuItems.map((item) => {

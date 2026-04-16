@@ -8,6 +8,7 @@ import Approvals from './pages/Approvals'
 import Delivery from './pages/Delivery'
 import AuthCallback from './pages/AuthCallback'
 import Session from './pages/Session'
+import Debug from './pages/Debug'
 
 
 
@@ -61,7 +62,13 @@ const sessionRoute = createRoute({
   component: Session,
 })
 
-const routeTree = rootRoute.addChildren([indexRoute, newRequirementRoute, workflowsRoute, monitoringRoute, approvalsRoute, deliveryRoute, authCallbackRoute, sessionRoute])
+const debugRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/debug',
+  component: Debug,
+})
+
+const routeTree = rootRoute.addChildren([indexRoute, newRequirementRoute, workflowsRoute, monitoringRoute, approvalsRoute, deliveryRoute, authCallbackRoute, sessionRoute, debugRoute])
 const router = createRouter({ routeTree })
 
 declare module '@tanstack/react-router' {

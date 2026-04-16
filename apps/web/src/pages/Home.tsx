@@ -13,68 +13,11 @@ const promptItems = [
   { key: 'performance', label: '性能优化', prompt: '分析并优化现有系统的性能瓶颈...' },
 ]
 
-type ChatRole = 'user' | 'assistant' | 'system'
-
-type ChatMessage = {
-  id: string
-  role: ChatRole
-  content: string
-}
-
-type SessionDetail = {
-  session: {
-    id: string
-    title: string
-  }
-  messages: Array<{
-    id: string
-    role: ChatRole
-    content: string
-  }>
-}
-
-type LocalDraftSession = {
-  localID: string
-  title: string
-  hasChatted: boolean
-  serverSessionID?: string
-}
-
-const activeSessionKey = 'activeRequirementSessionId'
-const draftSessionKey = 'activeRequirementSessionDraft'
-
-function readDraftSession(): LocalDraftSession | null {
-  const raw = localStorage.getItem(draftSessionKey)
-  if (!raw) {
-    return null
-  }
-  try {
-    return JSON.parse(raw) as LocalDraftSession
-  } catch {
-    localStorage.removeItem(draftSessionKey)
-    return null
-  }
-}
-
-function saveDraftSession(session: LocalDraftSession): void {
-  localStorage.setItem(draftSessionKey, JSON.stringify(session))
-  localStorage.setItem(activeSessionKey, session.localID)
-}
-
-function mapMessages(messages: SessionDetail['messages']): ChatMessage[] {
-  return messages.map((item) => ({
-    id: item.id,
-    role: item.role,
-    content: item.content,
-  }))
-}
-
 export default function Home() {
   const navigate = useNavigate()
   const [input, setInput] = useState('')
   const [creating, setCreating] = useState(false)
   const [convCollapsed, setConvCollapsed] = useState(false)
-  const [draftSession, setDraftSession] = useState<LocalDraftSession | null>(() => readDraftSession())
 
   // 创建新会话 - 立即跳转，首条消息通过 sessionStorage 传给 Session 页面
   const createSession = async (title: string, prompt: string) => {

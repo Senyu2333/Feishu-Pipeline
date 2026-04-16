@@ -66,6 +66,7 @@ type User struct {
 	FeishuOpenID string   `gorm:"size:128;uniqueIndex"`
 	Name         string   `gorm:"size:128;not null"`
 	Email        string   `gorm:"size:128"`
+	AvatarURL    string   `gorm:"size:512"`
 	Role         Role     `gorm:"size:32;not null"`
 	Departments  []string `gorm:"serializer:json"`
 	BaseModel

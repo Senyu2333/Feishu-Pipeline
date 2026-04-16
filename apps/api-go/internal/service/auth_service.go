@@ -182,6 +182,7 @@ func mapProfileToUser(profile feishu.UserProfile) model.User {
 		FeishuOpenID: profile.OpenID,
 		Name:         utils.Coalesce(profile.Name, profile.EnName, "飞书用户"),
 		Email:        utils.Coalesce(profile.EnterpriseEmail, profile.Email),
+		AvatarURL:    profile.AvatarURL,
 		Role:         model.RoleOther,
 		Departments:  []string{"其他"},
 	}

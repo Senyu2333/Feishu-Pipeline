@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams } from '@tanstack/react-router'
 import { Bubble, Sender } from '@ant-design/x'
 import type { BubbleListProps } from '@ant-design/x'
@@ -54,25 +54,34 @@ export default function Session() {
       .catch(() => {})
   }, [])
 
+  // 使用 ref 存储 sending 状态，避免闭包问题
+  const sendingRef = useRef(sending)
+  useEffect(() => {
+    sendingRef.current = sending
+  }, [sending])
+
   // 发送消息（抽出独立函数，供手动发送和自动发送复用）
-  const sendMessage = async (content: string) => {
-    if (!content.trim() || sending) return
+  const sendMessage = useCallback(async (content: string) => {
+    if (!content.trim() || sendingRef.current) return
+
+    // 立即更新 ref，避免并发问题
+    sendingRef.current = true
     setSending(true)
 
-    // 乐观渲染：立即把用户消息 + loading 气泡追加到本地
-    setSession(prev => {
-      if (!prev) return prev
-      return {
-        ...prev,
-        messages: [
-          ...prev.messages,
-          { id: `local_${Date.now()}`, role: 'user', content, createdAt: new Date().toISOString() },
-          { id: LOADING_MSG_ID, role: 'assistant', content: '', createdAt: new Date().toISOString() },
-        ],
-      }
-    })
-
     try {
+      // 乐观渲染：立即把用户消息 + loading 气泡追加到本地
+      setSession(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          messages: [
+            ...prev.messages,
+            { id: `local_${Date.now()}`, role: 'user', content, createdAt: new Date().toISOString() },
+            { id: LOADING_MSG_ID, role: 'assistant', content: '', createdAt: new Date().toISOString() },
+          ],
+        }
+      })
+
       const res = await fetch(`/api/sessions/${sessionId}/messages/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -88,7 +97,7 @@ export default function Session() {
       const decoder = new TextDecoder()
       let accumulated = ''
 
-      // 把 loading 气泡变成真实的 assistant 消息（先用空内容占位）
+      // 把 loading 气泡变成真实的 assistant 消息
       setSession(prev => {
         if (!prev) return prev
         return {
@@ -101,16 +110,26 @@ export default function Session() {
         }
       })
 
-      while (true) {
+      let streamDone = false
+      while (!streamDone) {
         const { done, value } = await reader.read()
-        if (done) break
+        console.log('[SSE] read:', { done, valueLength: value?.length })
+        if (done) {
+          console.log('[SSE] reader.done, breaking')
+          break
+        }
 
         const chunk = decoder.decode(value, { stream: true })
         const lines = chunk.split('\n')
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue
           const data = line.slice(6).trim()
-          if (data === '[DONE]') break
+          console.log('[SSE] data:', data.slice(0, 50))
+          if (data === '[DONE]') {
+            console.log('[SSE] got [DONE], setting streamDone=true')
+            streamDone = true
+            break
+          }
           accumulated += data
           // 逐字更新 assistant 气泡
           setSession(prev => {
@@ -126,17 +145,37 @@ export default function Session() {
           })
         }
       }
-    } catch (err) {
-      console.error('Failed to send message:', err)
-      // 失败时移除 loading 气泡
+
+      // 流式结束：移除 streaming 消息，重新添加普通消息
+      const finalContent = accumulated
+      const finalId = `msg_${Date.now()}`
       setSession(prev => {
         if (!prev) return prev
-        return { ...prev, messages: prev.messages.filter(m => m.id !== LOADING_MSG_ID) }
+        return {
+          ...prev,
+          messages: [
+            ...prev.messages.filter(m => m.id !== STREAMING_MSG_ID),
+            { id: finalId, role: 'assistant' as const, content: finalContent, createdAt: new Date().toISOString() },
+          ],
+        }
+      })
+    } catch (err) {
+      console.error('Failed to send message:', err)
+      setSession(prev => {
+        if (!prev) return prev
+        return { ...prev, messages: prev.messages.filter(m => m.id !== LOADING_MSG_ID && m.id !== STREAMING_MSG_ID) }
       })
     } finally {
-      setSending(false)
+      console.log('[SSE] finally block, setting sending=false')
+      // 立即更新 ref，确保状态一致性
+      sendingRef.current = false
+      // 使用 setTimeout 确保状态更新在下一个渲染周期执行
+      setTimeout(() => {
+        console.log('[SSE] setTimeout callback, calling setSending(false)')
+        setSending(false)
+      }, 0)
     }
-  }
+  }, [sessionId])
 
   // 获取会话详情，加载完毕后检查是否有待发消息（从 Home 跳转过来的首条消息）
   useEffect(() => {
@@ -164,12 +203,16 @@ export default function Session() {
   }, [sessionId])
 
   // 构建 Bubble.List items
-  const bubbleItems: BubbleListProps['items'] = (session?.messages ?? []).map(msg => ({
-    key: msg.id,
-    role: msg.role === 'user' ? 'user' : 'assistant',
-    content: msg.content,
-    loading: msg.id === LOADING_MSG_ID,
-  }))
+  const bubbleItems: BubbleListProps['items'] = (session?.messages ?? []).map(msg => {
+    const isStreaming = msg.id === STREAMING_MSG_ID
+    return {
+      key: msg.id,
+      role: msg.role === 'user' ? 'user' : 'assistant',
+      content: msg.content,
+      loading: msg.id === LOADING_MSG_ID,
+      typing: isStreaming,
+    }
+  })
 
   // role 配置（@ant-design/x v2 用 role 单数，每条 item 的 role 字段指向此配置）
   const roleConfig: BubbleListProps['role'] = {
@@ -183,6 +226,7 @@ export default function Session() {
       placement: 'start',
       avatar: <Avatar icon={<RobotOutlined />} style={{ background: '#f5f5f5', color: '#555' }} />,
       contentRender: (content) => <XMarkdown>{String(content)}</XMarkdown>,
+      typing: sending, // 控制打字动画
     },
   }
 
@@ -238,6 +282,15 @@ export default function Session() {
             onChange={setInput}
             onSubmit={() => { const c = input; setInput(''); sendMessage(c) }}
             loading={sending}
+            onCancel={() => {
+              // 用户点击 stop 时清除 sending 状态和消息
+              sendingRef.current = false
+              setSending(false)
+              setSession(prev => {
+                if (!prev) return prev
+                return { ...prev, messages: prev.messages.filter(m => m.id !== LOADING_MSG_ID && m.id !== STREAMING_MSG_ID) }
+              })
+            }}
             placeholder="描述你的需求，Shift+Enter 换行，Enter 发送..."
           />
           <p className="text-center text-xs text-slate-400 mt-2">内容由 AI 生成，请仔细甄别</p>

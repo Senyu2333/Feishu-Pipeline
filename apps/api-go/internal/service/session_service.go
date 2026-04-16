@@ -218,6 +218,7 @@ func (s *SessionService) StreamMessage(ctx context.Context, userID string, sessi
 	var fullReply strings.Builder
 
 	go func() {
+		defer close(tokenCh)
 		if err := s.aiClient.GenerateStream(ctx, systemPrompt, userPrompt, tokenCh); err != nil {
 			log.Printf("[session %s] stream failed: %v", sessionID, err)
 		}

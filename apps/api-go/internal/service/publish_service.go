@@ -120,6 +120,10 @@ func (s *PublishService) HandlePublish(ctx context.Context, payload job.PublishJ
 	if err != nil {
 		return err
 	}
+	roleOwners, err := s.repository.ListRoleOwners(ctx)
+	if err != nil {
+		return err
+	}
 	knowledge, err := s.repository.SearchKnowledgeSources(ctx, aggregate.Session.Summary, 5)
 	if err != nil {
 		return err
@@ -128,6 +132,7 @@ func (s *PublishService) HandlePublish(ctx context.Context, payload job.PublishJ
 	output, err := s.agentEngine.Execute(ctx, agent.PublishInput{
 		Session:      aggregate,
 		RoleMappings: mappings,
+		RoleOwners:   roleOwners,
 		Knowledge:    knowledge,
 	})
 	if err != nil {
@@ -140,12 +145,15 @@ func (s *PublishService) HandlePublish(ctx context.Context, payload job.PublishJ
 		if err != nil {
 			return err
 		}
-		recordURL, err := s.feishuClient.UpsertTaskRecord(ctx, output.Tasks[idx])
+		recordResult, err := s.feishuClient.UpsertTaskRecord(ctx, output.Tasks[idx])
 		if err != nil {
 			return err
 		}
 		output.Tasks[idx].DocURL = docURL
-		output.Tasks[idx].BitableRecordURL = recordURL
+		output.Tasks[idx].BitableAppToken = recordResult.AppToken
+		output.Tasks[idx].BitableTableID = recordResult.TableID
+		output.Tasks[idx].BitableRecordID = recordResult.RecordID
+		output.Tasks[idx].BitableRecordURL = recordResult.RecordURL
 
 		sendResult, err := s.feishuClient.SendTaskMessage(ctx, output.Tasks[idx])
 		if err != nil {

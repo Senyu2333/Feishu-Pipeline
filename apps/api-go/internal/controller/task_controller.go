@@ -17,6 +17,12 @@ func NewTaskController(taskService *service.TaskService) *TaskController {
 	return &TaskController{taskService: taskService}
 }
 
+// GetTask
+// @tags 任务
+// @summary 任务详情
+// @router /api/tasks/{taskID} [GET]
+// @param taskID path string true "任务ID"
+// @produce application/json
 func (c *TaskController) GetTask(ctx *gin.Context) {
 	task, err := c.taskService.GetTask(ctx.Request.Context(), ctx.Param("taskID"))
 	if err != nil {
@@ -26,6 +32,14 @@ func (c *TaskController) GetTask(ctx *gin.Context) {
 	writeSuccess(ctx, http.StatusOK, tasktype.NewTaskResponse(task))
 }
 
+// UpdateTaskStatus
+// @tags 任务
+// @summary 更新任务状态
+// @router /api/tasks/{taskID}/status [PATCH]
+// @accept application/json
+// @produce application/json
+// @param taskID path string true "任务ID"
+// @param req body tasktype.UpdateTaskStatusRequest true "json入参"
 func (c *TaskController) UpdateTaskStatus(ctx *gin.Context) {
 	var request tasktype.UpdateTaskStatusRequest
 	if err := ctx.ShouldBindJSON(&request); err != nil {

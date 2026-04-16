@@ -4,7 +4,7 @@ node_modules/
 # pnpm
 .pnpm/
 pnpm-debug.log*
-pnpm-store/
+.pnpm-store/
 
 # Build outputs
 dist/

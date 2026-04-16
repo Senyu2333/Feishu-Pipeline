@@ -30,10 +30,13 @@ func (s *TaskService) UpdateTaskStatus(ctx context.Context, taskID string, statu
 		return model.Task{}, err
 	}
 
-	recordURL, err := s.feishuClient.UpsertTaskRecord(ctx, task)
-	if err == nil && recordURL != "" {
-		task.BitableRecordURL = recordURL
-		_ = s.repository.UpdateTaskLinks(ctx, task.ID, task.DocURL, recordURL)
+	recordResult, err := s.feishuClient.UpsertTaskRecord(ctx, task)
+	if err == nil && recordResult.RecordURL != "" {
+		task.BitableAppToken = recordResult.AppToken
+		task.BitableTableID = recordResult.TableID
+		task.BitableRecordID = recordResult.RecordID
+		task.BitableRecordURL = recordResult.RecordURL
+		_ = s.repository.UpdateTaskLinks(ctx, task.ID, task.DocURL, recordResult.RecordURL, recordResult.RecordID, recordResult.AppToken, recordResult.TableID)
 	}
 	return task, nil
 }

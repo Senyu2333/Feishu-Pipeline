@@ -14,12 +14,25 @@ database:
   path: "./data/requirement-delivery.db"
 
 feishu:
-  enabled: false
-  app_id: ""
-  app_secret: ""
-  redirect_url: ""
+  enabled: true
+  app_id: "cli_a954fa893fb85bc6"
+  app_secret: "aYDUH3soLMlwONsU262qpcziZmjVDwOe"
+  redirect_url: "http://localhost:5173/auth/callback"
   open_base_url: "https://open.feishu.cn"
   bot_name: "需求交付机器人"
   receive_id_type: "open_id"
+  doc_folder_token: ""
+  bitable_name: "需求排期"
+  bitable_folder_token: ""
   bitable_app_token: ""
   bitable_table_id: ""
+
+ai:
+  provider: "ark"
+  ark:
+    base_url: "https://ark.cn-beijing.volces.com/api/v3"
+    model: "doubao-seed-2-0-lite-260215"
+    api_key: "ffa76c68-b9a3-4ec4-8daf-b70e3a39696c"
+    temperature: 0.2
+    max_tokens: 4096
+    timeout_sec: 120

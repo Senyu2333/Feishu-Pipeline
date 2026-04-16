@@ -13,7 +13,8 @@ const mainNavItems = [
 interface User {
   id: string
   name: string
-  avatar: string
+  avatarUrl: string
+  departments: string[]
 }
 
 interface Session {
@@ -42,8 +43,8 @@ export default function Sidebar({ convCollapsed = false, onConvCollapse }: Sideb
   const [sessions, setSessions] = useState<Session[]>([])
   const [sessionsLoading, setSessionsLoading] = useState(true)
 
-  // 只在主页显示右侧会话栏
-  const showConversationPanel = pathname === '/'
+  // 在主页和会话详情页均显示会话面板
+  const showConversationPanel = pathname === '/' || pathname.startsWith('/sessions')
 
   const isActive = (to: string) => pathname === to || (to !== '/' && pathname.startsWith(to))
 
@@ -90,9 +91,26 @@ export default function Sidebar({ convCollapsed = false, onConvCollapse }: Sideb
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // 跳转到飞书登录
-  const handleLogin = () => {
-    window.location.href = '/api/auth/feishu/login'
+  // 跳转到飞书登录 - 先获取配置再构建授权 URL
+  const handleLogin = async () => {
+    try {
+      const res = await fetch('/api/auth/feishu/config')
+      if (!res.ok) throw new Error('Failed to get config')
+      const data = await res.json()
+      const config = data.data
+      if (!config?.enabled) { alert('飞书登录未启用'); return }
+      const state = Math.random().toString(36).substring(2)
+      sessionStorage.setItem('feishu_auth_state', state)
+      const redirectUri = `${window.location.origin}/auth/callback`
+      const authUrl = `https://open.feishu.cn/open-apis/authen/v1/authorize?` +
+        `app_id=${config.appId}&` +
+        `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+        `state=${state}`
+      window.location.href = authUrl
+    } catch (err) {
+      console.error('Login failed:', err)
+      alert('获取登录配置失败')
+    }
   }
 
   // 登出
@@ -153,8 +171,8 @@ export default function Sidebar({ convCollapsed = false, onConvCollapse }: Sideb
                 onClick={() => setShowMenu(!showMenu)}
                 className="w-10 h-10 rounded-full bg-surface-container-highest flex items-center justify-center overflow-hidden border border-outline-variant/30 hover:ring-2 hover:ring-primary/30 transition-all"
               >
-                {user.avatar ? (
-                  <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
+                {user.avatarUrl ? (
+                  <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
                 ) : (
                   <span className="material-symbols-outlined text-slate-500">person</span>
                 )}
@@ -170,20 +188,34 @@ export default function Sidebar({ convCollapsed = false, onConvCollapse }: Sideb
               </button>
             )}
 
-            {/* 登出菜单 */}
+            {/* 设置菜单 */}
             {showMenu && user && (
-              <div className="absolute bottom-full left-0 mb-2 w-48 bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 py-2 animate-fade-in">
-                <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-700">
+              <div className="absolute bottom-full left-0 mb-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 py-2 animate-fade-in">
+                <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-700">
                   <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{user.name}</p>
-                  <p className="text-xs text-slate-500 truncate">{user.id}</p>
+                  <p className="text-xs text-slate-500 truncate">{user.departments?.length > 0 ? user.departments[0] : user.id}</p>
                 </div>
                 <button
-                  onClick={handleLogout}
-                  className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2 transition-colors"
+                  className="w-full px-4 py-2.5 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 flex items-center gap-3 transition-colors"
                 >
-                  <span className="material-symbols-outlined text-sm">logout</span>
-                  Logout
+                  <span className="material-symbols-outlined text-base">settings</span>
+                  设置
                 </button>
+                <button
+                  className="w-full px-4 py-2.5 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 flex items-center gap-3 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-base">help</span>
+                  帮助与反馈
+                </button>
+                <div className="border-t border-slate-100 dark:border-slate-700 mt-1 pt-1">
+                  <button
+                    onClick={handleLogout}
+                    className="w-full px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-3 transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-base">logout</span>
+                    退出登录
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -231,20 +263,20 @@ export default function Sidebar({ convCollapsed = false, onConvCollapse }: Sideb
                   No conversations yet
                 </div>
               ) : (
-                sessions.map((session, index) => {
-                  const isFirst = index === 0
+                sessions.map((session) => {
+                  const isActive = pathname === `/sessions/${session.id}`
                   return (
                     <a
                       key={session.id}
                       href={`/sessions/${session.id}`}
                       className={`px-3 py-2 mx-2 flex items-center gap-3 cursor-pointer group transition-all duration-200 rounded-lg ${
-                        isFirst
+                        isActive
                           ? 'bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-300 shadow-sm'
                           : 'text-slate-600 dark:text-slate-400 hover:bg-white/50 dark:hover:bg-slate-800/50'
                       }`}
                     >
-                      <span className={`material-symbols-outlined text-sm ${isFirst ? 'opacity-70' : 'opacity-40'}`}>
-                        {isFirst ? 'chat_bubble' : 'history'}
+                      <span className={`material-symbols-outlined text-sm ${isActive ? 'opacity-70' : 'opacity-40'}`}>
+                        {isActive ? 'chat_bubble' : 'history'}
                       </span>
                       <span className="text-sm font-medium truncate">{session.title}</span>
                     </a>

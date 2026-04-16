@@ -509,7 +509,89 @@ func (c *Client) CreateTaskDoc(ctx context.Context, sessionTitle string, task mo
 		return "", errors.New("feishu document id is empty")
 	}
 
+	if err := c.appendDocumentContent(ctx, appAccessToken, response.Data.Document.DocumentID, task.Description); err != nil {
+		return "", fmt.Errorf("append doc content failed: %w", err)
+	}
+
 	return fmt.Sprintf("https://feishu.cn/docx/%s", url.PathEscape(response.Data.Document.DocumentID)), nil
+}
+
+func (c *Client) appendDocumentContent(ctx context.Context, appAccessToken string, documentID string, markdownContent string) error {
+	documentID = strings.TrimSpace(documentID)
+	if documentID == "" {
+		return errors.New("document id is required")
+	}
+
+	children := buildDocParagraphBlocks(markdownContent)
+	if len(children) == 0 {
+		return nil
+	}
+
+	for _, group := range chunkParagraphBlocks(children, 20) {
+		var response struct {
+			Code int    `json:"code"`
+			Msg  string `json:"msg"`
+		}
+		path := fmt.Sprintf("/open-apis/docx/v1/documents/%s/blocks/%s/children", url.PathEscape(documentID), url.PathEscape(documentID))
+		if err := c.doJSONWithToken(ctx, http.MethodPost, path, appAccessToken, map[string]any{
+			"children": group,
+		}, &response); err != nil {
+			return err
+		}
+		if response.Code != 0 {
+			return fmt.Errorf("append doc blocks failed: %s", response.Msg)
+		}
+	}
+	return nil
+}
+
+func buildDocParagraphBlocks(markdownContent string) []map[string]any {
+	lines := strings.Split(strings.ReplaceAll(markdownContent, "\r\n", "\n"), "\n")
+	children := make([]map[string]any, 0, len(lines))
+	for _, raw := range lines {
+		content := strings.TrimSpace(raw)
+		if content == "" {
+			continue
+		}
+		content = strings.TrimLeft(content, "#")
+		content = strings.TrimSpace(content)
+		if content == "" {
+			continue
+		}
+		children = append(children, map[string]any{
+			"block_type": 2,
+			"text": map[string]any{
+				"elements": []map[string]any{
+					{
+						"text_run": map[string]any{
+							"content":            content,
+							"text_element_style": map[string]any{},
+						},
+					},
+				},
+				"style": map[string]any{},
+			},
+		})
+	}
+	return children
+}
+
+func chunkParagraphBlocks(items []map[string]any, size int) [][]map[string]any {
+	if size <= 0 {
+		return [][]map[string]any{items}
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	chunks := make([][]map[string]any, 0, (len(items)+size-1)/size)
+	for start := 0; start < len(items); start += size {
+		end := start + size
+		if end > len(items) {
+			end = len(items)
+		}
+		chunks = append(chunks, items[start:end])
+	}
+	return chunks
 }
 
 func (c *Client) UpsertTaskRecord(ctx context.Context, task model.Task) (TaskRecordResult, error) {

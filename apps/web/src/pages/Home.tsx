@@ -69,6 +69,7 @@ export default function Home() {
   const [input, setInput] = useState('')
   const [creating, setCreating] = useState(false)
   const [convCollapsed, setConvCollapsed] = useState(false)
+  const [draftSession, setDraftSession] = useState<LocalDraftSession | null>(() => readDraftSession())
 
   // 创建新会话
   const createSession = async (title: string, prompt: string) => {

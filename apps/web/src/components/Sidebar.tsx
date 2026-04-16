@@ -33,6 +33,7 @@ interface SidebarProps {
 
 export default function Sidebar({ convCollapsed = false, onConvCollapse }: SidebarProps) {
   const location = useLocation()
+  const navigate = useNavigate()
   const pathname = location.pathname
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)

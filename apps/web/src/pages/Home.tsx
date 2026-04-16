@@ -8,6 +8,62 @@ const promptItems = [
   { key: 'sla', label: 'SLA Definition', prompt: 'Define SLA requirements for...' },
 ]
 
+type ChatRole = 'user' | 'assistant' | 'system'
+
+type ChatMessage = {
+  id: string
+  role: ChatRole
+  content: string
+}
+
+type SessionDetail = {
+  session: {
+    id: string
+    title: string
+  }
+  messages: Array<{
+    id: string
+    role: ChatRole
+    content: string
+  }>
+}
+
+type LocalDraftSession = {
+  localID: string
+  title: string
+  hasChatted: boolean
+  serverSessionID?: string
+}
+
+const activeSessionKey = 'activeRequirementSessionId'
+const draftSessionKey = 'activeRequirementSessionDraft'
+
+function readDraftSession(): LocalDraftSession | null {
+  const raw = localStorage.getItem(draftSessionKey)
+  if (!raw) {
+    return null
+  }
+  try {
+    return JSON.parse(raw) as LocalDraftSession
+  } catch {
+    localStorage.removeItem(draftSessionKey)
+    return null
+  }
+}
+
+function saveDraftSession(session: LocalDraftSession): void {
+  localStorage.setItem(draftSessionKey, JSON.stringify(session))
+  localStorage.setItem(activeSessionKey, session.localID)
+}
+
+function mapMessages(messages: SessionDetail['messages']): ChatMessage[] {
+  return messages.map((item) => ({
+    id: item.id,
+    role: item.role,
+    content: item.content,
+  }))
+}
+
 export default function Home() {
   const navigate = useNavigate()
   const [input, setInput] = useState('')
@@ -58,7 +114,9 @@ export default function Home() {
         {/* Welcome Header */}
         <div className="pt-12 pb-6 px-12 text-center">
           <h1 className="text-4xl font-extrabold tracking-tight text-on-surface mb-2">Hello, Designer</h1>
-          <p className="text-on-surface-variant font-medium text-lg">Define your new enterprise requirements through guided dialogue.</p>
+          <p className="text-on-surface-variant font-medium text-lg">
+            {draftSession ? `当前会话：${draftSession.title}` : 'Define your new enterprise requirements through guided dialogue.'}
+          </p>
         </div>
 
         {/* Chat Conversation Container */}

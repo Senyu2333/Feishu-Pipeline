@@ -9,13 +9,14 @@ import (
 )
 
 type Dependencies struct {
-	CookieName        string
-	HealthController  *controller.HealthController
-	AuthController    *controller.AuthController
-	SessionController *controller.SessionController
-	TaskController    *controller.TaskController
-	AdminController   *controller.AdminController
-	AuthService       *service.AuthService
+	CookieName         string
+	HealthController   *controller.HealthController
+	AuthController     *controller.AuthController
+	SessionController  *controller.SessionController
+	TaskController     *controller.TaskController
+	AdminController    *controller.AdminController
+	PipelineController *controller.PipelineController
+	AuthService        *service.AuthService
 }
 
 func New(deps Dependencies) *gin.Engine {
@@ -46,6 +47,8 @@ func New(deps Dependencies) *gin.Engine {
 	adminGroup.GET("/role-owners", deps.AdminController.ListRoleOwners)
 	adminGroup.POST("/role-owners", deps.AdminController.SaveRoleOwner)
 	adminGroup.POST("/knowledge/sync", deps.AdminController.SyncKnowledge)
+
+	authenticated.POST("/pipeline/create", deps.PipelineController.Create)
 
 	return engine
 }

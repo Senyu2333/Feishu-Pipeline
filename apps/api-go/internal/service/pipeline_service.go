@@ -3,13 +3,14 @@ package service
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"feishu-pipeline/apps/api-go/internal/external/feishu"
 )
 
-const templateAppToken = "A7krw99hJiatrZktgmzcOVmkn6d"
+const (
+	templateAppToken = "A7krw99hJiatrZktgmzcOVmkn6d"
+)
 
 // typeToP 任务类型 → 优先级
 var typeToP = map[string]string{
@@ -59,22 +60,22 @@ type PipelineCreateResult struct {
 	RecordIDs  []string `json:"recordIds"`
 }
 
-// mockTasks 当 AI 未输出时使用的 mock 数据
+// mockTasks 当 AI 未输出时使用的 mock 数据（对应 TaskMock.js）
 var mockTasks = []PipelineTask{
 	{
-		ID:           "mock_1",
-		Title:        "用户登录页面重构",
+		ID:           "recvh0ReNieoZ8",
+		Title:        "AI生成前端任务",
 		Type:         "frontend",
 		Status:       "todo",
-		AssigneeName: "前端负责人小红",
+		AssigneeName: "ou_2910013f1e6456f16a0ce75ede950a0a",
 		AssigneeRole: "frontend",
 	},
 	{
-		ID:           "mock_2",
-		Title:        "首页接口性能优化",
+		ID:           "recvh0ReNikCDG",
+		Title:        "AI生成后端任务",
 		Type:         "backend",
 		Status:       "todo",
-		AssigneeName: "后端负责人小明",
+		AssigneeName: "ou_e04138c9633dd0d2ea166d79f548ab5d",
 		AssigneeRole: "backend",
 	},
 }
@@ -90,24 +91,27 @@ func NewPipelineService(feishuClient *feishu.Client) *PipelineService {
 func (s *PipelineService) CreatePipeline(ctx context.Context, result PipelineResult) (*PipelineCreateResult, error) {
 	tasks := result.Tasks
 	if len(tasks) == 0 {
-		log.Printf("[pipeline] AI 未输出任务，使用 mock 数据")
 		tasks = mockTasks
 	}
 
 	// 步骤 1：复制模板表格，得到新的 app_token
-	log.Printf("[pipeline] 开始复制模板表格 app_token=%s", templateAppToken)
 	newAppToken, err := s.feishuClient.CopyBitableTemplate(ctx, templateAppToken)
 	if err != nil {
 		return nil, fmt.Errorf("copy template: %w", err)
 	}
-	log.Printf("[pipeline] 模板复制成功，新 app_token=%s", newAppToken)
 
-	// 步骤 2：获取新表格的第一个 table_id
-	tableID, err := s.feishuClient.GetBitableTableID(ctx, newAppToken)
+	// 步骤 2：获取新表格的第一个 table_id（飞书复制模板是异步的，需重试等待）
+	var tableID string
+	for i := range 8 {
+		time.Sleep(time.Duration(i+1) * 2 * time.Second)
+		tableID, err = s.feishuClient.GetBitableTableID(ctx, newAppToken)
+		if err == nil {
+			break
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("get table id: %w", err)
 	}
-	log.Printf("[pipeline] 获取 table_id 成功: %s", tableID)
 
 	// 步骤 3：构造记录并批量写入
 	now := time.Now()
@@ -121,28 +125,29 @@ func (s *PipelineService) CreatePipeline(ctx context.Context, result PipelineRes
 		if priority == "" {
 			priority = "P3"
 		}
-		records = append(records, feishu.BitableRecord{Fields: map[string]any{
+
+		fields := map[string]any{
 			"需求":   t.Title,
 			"优先级":  priority,
 			"状态":   "未开始",
 			"开始时间": nowMs,
 			"截止时间": deadlineMs,
-		}})
+		}
+
+		records = append(records, feishu.BitableRecord{Fields: fields})
 	}
 
-	log.Printf("[pipeline] 开始批量写入 %d 条记录", len(records))
 	recordIDs, err := s.feishuClient.BatchCreateBitableRecords(ctx, newAppToken, tableID, records)
 	if err != nil {
 		return nil, fmt.Errorf("batch create records: %w", err)
 	}
 
+	// 拼接 URL
 	tableURL := fmt.Sprintf("https://feishu.cn/base/%s?table=%s", newAppToken, tableID)
 	recordURLs := make([]string, len(recordIDs))
 	for i, rid := range recordIDs {
 		recordURLs[i] = fmt.Sprintf("%s&record=%s", tableURL, rid)
 	}
-
-	log.Printf("[pipeline] 写入完成，表格地址: %s", tableURL)
 
 	return &PipelineCreateResult{
 		TableURL:   tableURL,

@@ -17,10 +17,11 @@ type SessionPublisher interface {
 }
 
 type SessionService struct {
-	repository  *repo.Repository
-	authService *AuthService
-	publisher   SessionPublisher
-	aiClient    ai.Client
+	repository      *repo.Repository
+	authService     *AuthService
+	publisher       SessionPublisher
+	aiClient        ai.Client
+	pipelineService *PipelineService
 }
 
 func NewSessionService(repository *repo.Repository, authService *AuthService, aiClient ai.Client) *SessionService {
@@ -29,6 +30,10 @@ func NewSessionService(repository *repo.Repository, authService *AuthService, ai
 		authService: authService,
 		aiClient:    aiClient,
 	}
+}
+
+func (s *SessionService) SetPipelineService(ps *PipelineService) {
+	s.pipelineService = ps
 }
 
 func (s *SessionService) SetPublisher(publisher SessionPublisher) {
@@ -125,6 +130,29 @@ func (s *SessionService) AddMessage(ctx context.Context, userID string, sessionI
 	// 草稿阶段：调用 AI 正常对话
 	reply := s.generateChatReply(ctx, sessionID, aggregate.Messages, content)
 	_, err = s.repository.AddMessage(ctx, sessionID, model.MessageAssistant, reply)
+
+	// 每条消息后台触发创建飞书多维表格
+	if s.pipelineService != nil {
+		go func() {
+			bgCtx := context.Background()
+			result, pErr := s.pipelineService.CreatePipeline(bgCtx, PipelineResult{
+				Requirement: PipelineRequirement{
+					SessionID: sessionID,
+					Title:     aggregate.Session.Title,
+				},
+			})
+			if pErr != nil {
+				log.Printf("[pipeline] 用户消息触发创建表格失败: %v", pErr)
+			} else {
+				log.Printf("[pipeline] 用户消息触发创建表格成功: %s", result.TableURL)
+				tableReply := "已为您创建飞书多维表格：" + result.TableURL
+				if _, saveErr := s.repository.AddMessage(bgCtx, sessionID, model.MessageAssistant, tableReply); saveErr != nil {
+					log.Printf("[pipeline] 保存表格链接消息失败: %v", saveErr)
+				}
+			}
+		}()
+	}
+
 	return err
 }
 
@@ -233,10 +261,31 @@ func (s *SessionService) StreamMessage(ctx context.Context, userID string, sessi
 	if fullReply.Len() > 0 {
 		_, _ = s.repository.AddMessage(ctx, sessionID, model.MessageAssistant, fullReply.String())
 	} else {
-		// 流式失败，降级
 		fallback := draftAssistantReply(content)
 		_, _ = s.repository.AddMessage(ctx, sessionID, model.MessageAssistant, fallback)
 		ch <- fallback
+	}
+
+	// 后台触发创建飞书多维表格
+	if s.pipelineService != nil {
+		go func() {
+			bgCtx := context.Background()
+			result, pErr := s.pipelineService.CreatePipeline(bgCtx, PipelineResult{
+				Requirement: PipelineRequirement{
+					SessionID: sessionID,
+					Title:     aggregate.Session.Title,
+				},
+			})
+			if pErr != nil {
+				log.Printf("[pipeline] 用户消息触发创建表格失败: %v", pErr)
+			} else {
+				log.Printf("[pipeline] 用户消息触发创建表格成功: %s", result.TableURL)
+				tableReply := "已为您创建飞书多维表格：" + result.TableURL
+				if _, saveErr := s.repository.AddMessage(bgCtx, sessionID, model.MessageAssistant, tableReply); saveErr != nil {
+					log.Printf("[pipeline] 保存表格链接消息失败: %v", saveErr)
+				}
+			}
+		}()
 	}
 }
 

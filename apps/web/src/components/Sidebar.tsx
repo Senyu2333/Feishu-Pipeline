@@ -227,7 +227,7 @@ export default function Sidebar({ convCollapsed = false, onConvCollapse }: Sideb
           {/* 折叠/展开按钮 - 固定在左侧导航旁边 */}
           <button
             onClick={toggleConvCollapse}
-            title={convCollapsed ? 'Expand Conversations' : 'Collapse Conversations'}
+            title={convCollapsed ? '展开会话' : '收起会话'}
             className={`fixed top-1/2 -translate-y-1/2 w-6 h-12 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full flex items-center justify-center shadow-md hover:shadow-lg transition-all z-50 ${convCollapsed ? 'left-20' : 'left-[296px]'}`}
           >
             <span className="material-symbols-outlined text-xs text-slate-500">
@@ -238,20 +238,20 @@ export default function Sidebar({ convCollapsed = false, onConvCollapse }: Sideb
           {/* Conversations 栏 */}
           <aside className={`fixed left-20 top-0 h-full flex flex-col z-30 bg-slate-100/80 dark:bg-slate-950/80 backdrop-blur-xl border-r border-slate-200/30 dark:border-slate-800/30 transition-all duration-300 ${convCollapsed ? 'w-0 opacity-0 overflow-hidden' : 'w-64 opacity-100'}`}>
             <div className="px-6 h-20 flex flex-col justify-center flex-shrink-0">
-              <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Conversations</h2>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Last 7 days</p>
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">会话</h2>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">最近 7 天</p>
             </div>
             <div className="px-4 mb-6 flex-shrink-0">
               <Link to="/new-requirement">
                 <button className="w-full py-3 px-4 flex items-center justify-center gap-2 bg-primary-container text-on-primary-container rounded-xl shadow-sm hover:shadow-md transition-all duration-300 group">
                   <span className="material-symbols-outlined text-sm">add</span>
-                  <span className="text-sm font-semibold">New Chat</span>
+                  <span className="text-sm font-semibold">新建会话</span>
                 </button>
               </Link>
             </div>
             <nav className="flex-1 overflow-y-auto space-y-1 min-w-0">
               <div className="px-6 mb-2">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Recent Chats</span>
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">最近会话</span>
               </div>
               {sessionsLoading ? (
                 <div className="px-6 py-4 text-center">
@@ -259,7 +259,7 @@ export default function Sidebar({ convCollapsed = false, onConvCollapse }: Sideb
                 </div>
               ) : sessions.length === 0 ? (
                 <div className="px-6 py-4 text-xs text-slate-400 text-center">
-                  No conversations yet
+                  暂无会话
                 </div>
               ) : (
                 sessions.map((session) => {

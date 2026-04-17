@@ -248,7 +248,7 @@ export default function Session() {
       <div className="min-h-screen bg-background">
         <Sidebar {...sidebarProps} />
         <main className="h-screen flex items-center justify-center" style={{ marginLeft: `${sidebarWidth}px` }}>
-          <p className="text-on-surface-variant">Session not found</p>
+          <p className="text-on-surface-variant">会话未找到</p>
         </main>
       </div>
     )

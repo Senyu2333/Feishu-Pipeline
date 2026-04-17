@@ -2,7 +2,7 @@ import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import axios from 'axios'
 import type { FastifyRequest, FastifyReply } from 'fastify'
-import { feishuClient, lark } from './lib/feishu.js'
+import { feishuClient, lark, getDepartmentChildren, batchGetDepartments, batchGetUserNames, sendMessage } from './lib/feishu.js'
 
 const app = Fastify({
   logger: {
@@ -13,31 +13,19 @@ const app = Fastify({
   },
 })
 
-// ── 插件 ────────────────────────────────────────────────────────────
 await app.register(cors, {
-  // 开发时允许 Vite dev server 跨域；生产按需收紧
   origin: process.env.CORS_ORIGIN ?? '*',
   credentials: true,
 })
 
-// ── 健康检查 ─────────────────────────────────────────────────────────
 app.get('/api/health2', async () => ({ status: 'ok', service: 'api-ts' }))
 
-// ── 在这里 import 并注册你的路由模块 ────────────────────────────────
 import { feishuRoutes } from './routes/feishu.js'
 app.register(feishuRoutes)
 
-//获取文件列表（使用飞书 SDK + user token）
 app.post("/api/feishu/list-files", async (request: FastifyRequest, reply: FastifyReply) => {
   try {
-    const { folder_token, page_size, page_token, order_by, direction, user_token } = request.body as {
-      folder_token?: string
-      page_size?: number
-      page_token?: string
-      order_by?: string
-      direction?: string
-      user_token?: string
-    }
+    const { folder_token, page_size, page_token, order_by, direction, user_token } = request.body as any
     if (!user_token) {
       return reply.status(400).send({ success: false, error: 'user_token is required' })
     }
@@ -60,10 +48,8 @@ app.post("/api/feishu/list-files", async (request: FastifyRequest, reply: Fastif
   }
 })
 
-// 获取飞书 OAuth 授权 URL（从 Go 后端获取 appId）
 app.get("/api/feishu/oauth-url", async (_request: FastifyRequest, reply: FastifyReply) => {
   try {
-    // 从 Go 后端获取 OAuth 配置
     const res = await axios.get('http://localhost:8080/api/auth/feishu/config')
     const { appId } = res.data.data || {}
 
@@ -71,8 +57,19 @@ app.get("/api/feishu/oauth-url", async (_request: FastifyRequest, reply: Fastify
       return reply.status(500).send({ success: false, error: 'Failed to get appId from Go backend' })
     }
 
-    // 需要申请的权限 scope
-    const scope = 'docx:document:create docx:document docx:document:readonly drive:drive:readonly'
+    // 需要申请的权限 scope（包括获取部门名称和用户姓名、发送消息所需的权限）
+    const scope = [
+      'docx:document:create',
+      'docx:document',
+      'docx:document:readonly',
+      'drive:drive:readonly',
+      'contact:contact.base:readonly',
+      'contact:department.base:readonly',
+      'contact:department.organize:readonly',
+      'contact:user.basic_profile:readonly',
+      'im:message',
+      'im:message:send_as_bot',
+    ].join(' ')
     const redirectUri = encodeURIComponent('http://localhost:3001/api/feishu/callback')
     const oauthUrl = `https://open.feishu.cn/open-apis/authen/v1/authorize?app_id=${appId}&redirect_uri=${redirectUri}&state=ts-auth&scope=${encodeURIComponent(scope)}`
 
@@ -83,7 +80,6 @@ app.get("/api/feishu/oauth-url", async (_request: FastifyRequest, reply: Fastify
   }
 })
 
-// 飞书 OAuth 回调 - 用 code 换取 user_token
 app.get("/api/feishu/callback", async (request: FastifyRequest, reply: FastifyReply) => {
   const { code } = request.query as { code?: string }
 
@@ -95,9 +91,6 @@ app.get("/api/feishu/callback", async (request: FastifyRequest, reply: FastifyRe
     const appId = process.env.FEISHU_APP_ID ?? 'cli_a954fa893fb85bc6'
     const appSecret = process.env.FEISHU_APP_SECRET ?? 'aYDUH3soLMlwONsU262qpcziZmjVDwOe'
 
-    console.log('[OAuth] 换取 token，code:', code.slice(0, 20) + '...')
-
-    // 第一步：获取 app_access_token
     const appTokenRes = await axios.post(
       'https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal',
       { app_id: appId, app_secret: appSecret }
@@ -109,21 +102,11 @@ app.get("/api/feishu/callback", async (request: FastifyRequest, reply: FastifyRe
       return reply.redirect(`http://localhost:5173/debug?error=no_app_token&detail=${debugInfo}`)
     }
 
-    // 第二步：用 app_access_token + code 换取 user_token
     const tokenRes = await axios.post(
       'https://open.feishu.cn/open-apis/authen/v1/oidc/access_token',
-      {
-        grant_type: 'authorization_code',
-        code,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${appAccessToken}`,
-        },
-      }
+      { grant_type: 'authorization_code', code },
+      { headers: { Authorization: `Bearer ${appAccessToken}` } }
     )
-
-    console.log('[OAuth] 响应:', JSON.stringify(tokenRes.data))
 
     const { access_token, refresh_token } = tokenRes.data.data || {}
 
@@ -134,14 +117,12 @@ app.get("/api/feishu/callback", async (request: FastifyRequest, reply: FastifyRe
 
     return reply.redirect(`http://localhost:5173/debug?token=${encodeURIComponent(access_token)}&refresh_token=${encodeURIComponent(refresh_token || '')}`)
   } catch (err) {
-    console.error('[OAuth] 换取 token 失败:', err)
     const error = err as { response?: { data?: unknown } }
     const debugInfo = encodeURIComponent(JSON.stringify(error.response?.data || String(err)))
     return reply.redirect(`http://localhost:5173/debug?error=oauth_failed&detail=${debugInfo}`)
   }
 })
 
-// 手动换取 token（用于调试）
 app.post("/api/feishu/exchange-token", async (request: FastifyRequest, reply: FastifyReply) => {
   const { code } = request.body as { code?: string }
 
@@ -153,7 +134,6 @@ app.post("/api/feishu/exchange-token", async (request: FastifyRequest, reply: Fa
     const appId = process.env.FEISHU_APP_ID ?? 'cli_a954fa893fb85bc6'
     const appSecret = process.env.FEISHU_APP_SECRET ?? 'aYDUH3soLMlwONsU262qpcziZmjVDwOe'
 
-    // 第一步：获取 app_access_token
     const appTokenRes = await axios.post(
       'https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal',
       { app_id: appId, app_secret: appSecret }
@@ -161,27 +141,19 @@ app.post("/api/feishu/exchange-token", async (request: FastifyRequest, reply: Fa
     const appAccessToken = appTokenRes.data?.app_access_token
 
     if (!appAccessToken) {
-      return reply.status(400).send({ success: false, error: 'Failed to get app_access_token', detail: appTokenRes.data })
+      return reply.status(400).send({ success: false, error: 'Failed to get app_access_token' })
     }
 
-    // 第二步：用 app_access_token + code 换取 user_token
     const tokenRes = await axios.post(
       'https://open.feishu.cn/open-apis/authen/v1/oidc/access_token',
-      {
-        grant_type: 'authorization_code',
-        code,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${appAccessToken}`,
-        },
-      }
+      { grant_type: 'authorization_code', code },
+      { headers: { Authorization: `Bearer ${appAccessToken}` } }
     )
 
     const { access_token, refresh_token, expires_in } = tokenRes.data.data || {}
 
     if (!access_token) {
-      return reply.status(400).send({ success: false, error: 'Failed to get token', detail: tokenRes.data })
+      return reply.status(400).send({ success: false, error: 'Failed to get token' })
     }
 
     return reply.send({
@@ -199,30 +171,12 @@ app.post("/api/feishu/exchange-token", async (request: FastifyRequest, reply: Fa
   }
 })
 
-//获取文件（使用 axios + user token）
 app.post("/api/feishu/get-drive-files", async (request: FastifyRequest, reply: FastifyReply) => {
   try {
-    const { folder_token, page_size, page_token, order_by, direction, user_id_type, user_token } = request.body as {
-      folder_token?: string
-      page_size?: number
-      page_token?: string
-      order_by?: string
-      direction?: string
-      user_id_type?: string
-      user_token?: string
-    }
+    const { folder_token, page_size, page_token, order_by, direction, user_id_type, user_token } = request.body as any
     const result = await axios.get("https://open.feishu.cn/open-apis/drive/v1/files", {
-      headers: {
-        Authorization: `Bearer ${user_token || ''}`,
-      },
-      params: {
-        folder_token,
-        page_size,
-        page_token,
-        order_by,
-        direction,
-        user_id_type,
-      },
+      headers: { Authorization: `Bearer ${user_token || ''}` },
+      params: { folder_token, page_size, page_token, order_by, direction, user_id_type },
     })
     return reply.send(result.data)
   } catch (err) {
@@ -231,16 +185,9 @@ app.post("/api/feishu/get-drive-files", async (request: FastifyRequest, reply: F
   }
 })
 
-// ── 飞书文档 API ──────────────────────────────────────────────────────
-
-// 创建文档（docx）
 app.post("/api/feishu/create-document", async (request: FastifyRequest, reply: FastifyReply) => {
   try {
-    const { folder_token, title, user_token } = request.body as {
-      folder_token?: string
-      title?: string
-      user_token?: string
-    }
+    const { folder_token, title, user_token } = request.body as any
     if (!user_token) {
       return reply.status(400).send({ success: false, error: 'user_token is required' })
     }
@@ -260,27 +207,17 @@ app.post("/api/feishu/create-document", async (request: FastifyRequest, reply: F
   }
 })
 
-// 获取文档纯文本内容
 app.get("/api/feishu/document-content", async (request: FastifyRequest, reply: FastifyReply) => {
   try {
-    const { document_id, user_token, lang } = request.query as {
-      document_id?: string
-      user_token?: string
-      lang?: number
-    }
+    const { document_id, user_token, lang } = request.query as any
     if (!document_id || !user_token) {
       return reply.status(400).send({ success: false, error: 'document_id and user_token are required' })
     }
-    // 使用 axios 直接调用
     const result = await axios.get(
       `https://open.feishu.cn/open-apis/docx/v1/documents/${document_id}/raw_content`,
       {
-        headers: {
-          Authorization: `Bearer ${user_token}`,
-        },
-        params: {
-          lang: lang || 0,
-        },
+        headers: { Authorization: `Bearer ${user_token}` },
+        params: { lang: lang || 0 },
       }
     )
     return reply.send({ success: true, data: result.data })
@@ -290,24 +227,131 @@ app.get("/api/feishu/document-content", async (request: FastifyRequest, reply: F
   }
 })
 
-// ── 飞书文档块 API ────────────────────────────────────────────────────
+app.get("/api/feishu/department-children", async (request: FastifyRequest, reply: FastifyReply) => {
+  try {
+    const { department_id, user_token, fetch_child, page_size, page_token, user_id_type, department_id_type } = request.query as any
+    if (!department_id) {
+      return reply.status(400).send({ success: false, error: 'department_id is required' })
+    }
+    const result = await getDepartmentChildren(department_id, user_token, {
+      fetch_child,
+      page_size,
+      page_token,
+      user_id_type,
+      department_id_type,
+    })
+    return reply.send({ success: true, data: result })
+  } catch (err) {
+    const error = err as Error
+    return reply.status(500).send({ success: false, error: error.message })
+  }
+})
 
-// 创建块（追加到指定块的子块末尾）
+app.get("/api/feishu/batch-departments", async (request: FastifyRequest, reply: FastifyReply) => {
+  try {
+    const { department_ids, user_token, department_id_type, user_id_type } = request.query as any
+    
+    if (!department_ids) {
+      return reply.status(400).send({ success: false, error: 'department_ids is required (comma-separated or array)' })
+    }
+    
+    // 支持逗号分隔的字符串或数组
+    const ids = Array.isArray(department_ids) ? department_ids : department_ids.split(',')
+    
+    if (ids.length > 50) {
+      return reply.status(400).send({ success: false, error: 'Maximum 50 department IDs allowed' })
+    }
+    
+    const result = await batchGetDepartments(ids, user_token, {
+      department_id_type,
+      user_id_type,
+    })
+    return reply.send({ success: true, data: result })
+  } catch (err) {
+    const error = err as Error
+    return reply.status(500).send({ success: false, error: error.message })
+  }
+})
+
+app.post("/api/feishu/batch-departments", async (request: FastifyRequest, reply: FastifyReply) => {
+  try {
+    const { department_ids, user_token, department_id_type, user_id_type } = request.body as any
+    
+    if (!department_ids || !Array.isArray(department_ids)) {
+      return reply.status(400).send({ success: false, error: 'department_ids is required (array)' })
+    }
+    
+    if (department_ids.length > 50) {
+      return reply.status(400).send({ success: false, error: 'Maximum 50 department IDs allowed' })
+    }
+    
+    const result = await batchGetDepartments(department_ids, user_token, {
+      department_id_type,
+      user_id_type,
+    })
+    return reply.send({ success: true, data: result })
+  } catch (err) {
+    const error = err as Error
+    return reply.status(500).send({ success: false, error: error.message })
+  }
+})
+
+app.post("/api/feishu/batch-user-names", async (request: FastifyRequest, reply: FastifyReply) => {
+  try {
+    const { user_ids, user_token, user_id_type } = request.body as any
+    
+    if (!user_ids || !Array.isArray(user_ids)) {
+      return reply.status(400).send({ success: false, error: 'user_ids is required (array)' })
+    }
+    
+    if (user_ids.length > 10) {
+      return reply.status(400).send({ success: false, error: 'Maximum 10 user IDs allowed' })
+    }
+    
+    const result = await batchGetUserNames(user_ids, user_token, {
+      user_id_type,
+    })
+    return reply.send({ success: true, data: result })
+  } catch (err) {
+    const error = err as Error
+    return reply.status(500).send({ success: false, error: error.message })
+  }
+})
+
+app.post("/api/feishu/send-message", async (request: FastifyRequest, reply: FastifyReply) => {
+  try {
+    const { receive_id, receive_id_type, msg_type, content, uuid } = request.body as any
+    
+    if (!receive_id) {
+      return reply.status(400).send({ success: false, error: 'receive_id is required' })
+    }
+    
+    if (!msg_type) {
+      return reply.status(400).send({ success: false, error: 'msg_type is required' })
+    }
+    
+    if (!content) {
+      return reply.status(400).send({ success: false, error: 'content is required' })
+    }
+    
+    // 使用 tenant_access_token（机器人身份）发送消息，不使用 user_token
+    const result = await sendMessage(receive_id, receive_id_type || 'open_id', msg_type, content, undefined, uuid)
+    return reply.send({ success: true, data: result })
+  } catch (err) {
+    const error = err as Error
+    return reply.status(500).send({ success: false, error: error.message })
+  }
+})
+
 app.post("/api/feishu/create-block", async (request: FastifyRequest, reply: FastifyReply) => {
   try {
-    const { document_id, block_id, user_token, children } = request.body as {
-      document_id?: string
-      block_id?: string
-      user_token?: string
-      children?: object[]
-    }
+    const { document_id, block_id, user_token, children } = request.body as any
     if (!document_id || !user_token) {
       return reply.status(400).send({ success: false, error: 'document_id and user_token are required' })
     }
-    // block_id 为空则追加到文档根级别
     const targetBlockId = block_id || document_id
     const defaultBlock = {
-      block_type: 2, // paragraph
+      block_type: 2,
       paragraph: { elements: [{ text_run: { content: '新段落', text_element_style: {} } }], style: {} },
     }
     const result = await axios.post(
@@ -322,43 +366,28 @@ app.post("/api/feishu/create-block", async (request: FastifyRequest, reply: Fast
   }
 })
 
-// 批量创建嵌套块（支持多层结构）
 app.post("/api/feishu/create-nested-blocks", async (request: FastifyRequest, reply: FastifyReply) => {
   try {
-    const { document_id, block_id, user_token, blocks } = request.body as {
-      document_id?: string
-      block_id?: string
-      user_token?: string
-      blocks?: object[]
-    }
+    const { document_id, block_id, user_token, blocks } = request.body as any
     if (!document_id || !user_token || !blocks) {
       return reply.status(400).send({ success: false, error: 'document_id, user_token, and blocks are required' })
     }
     const targetBlockId = block_id || document_id
-    console.log('[create-nested-blocks] document_id:', document_id, 'targetBlockId:', targetBlockId, 'blocks count:', blocks.length)
-    
     const result = await axios.post(
       `https://open.feishu.cn/open-apis/docx/v1/documents/${document_id}/blocks/${targetBlockId}/children`,
       { children: blocks },
       { headers: { Authorization: `Bearer ${user_token}` } }
     )
-    console.log('[create-nested-blocks] success:', result.data)
     return reply.send({ success: true, data: result.data })
   } catch (err) {
     const error = err as { message?: string; response?: { data?: unknown } }
-    console.error('[create-nested-blocks] error:', error.response?.data || error.message)
     return reply.status(500).send({ success: false, error: error.message, detail: error.response?.data })
   }
 })
 
-// 获取块内容
 app.get("/api/feishu/get-block", async (request: FastifyRequest, reply: FastifyReply) => {
   try {
-    const { document_id, block_id, user_token } = request.query as {
-      document_id?: string
-      block_id?: string
-      user_token?: string
-    }
+    const { document_id, block_id, user_token } = request.query as any
     if (!document_id || !block_id || !user_token) {
       return reply.status(400).send({ success: false, error: 'document_id, block_id, and user_token are required' })
     }
@@ -373,16 +402,9 @@ app.get("/api/feishu/get-block", async (request: FastifyRequest, reply: FastifyR
   }
 })
 
-// 获取所有子块
 app.get("/api/feishu/get-children", async (request: FastifyRequest, reply: FastifyReply) => {
   try {
-    const { document_id, block_id, user_token, page_size, page_token } = request.query as {
-      document_id?: string
-      block_id?: string
-      user_token?: string
-      page_size?: number
-      page_token?: string
-    }
+    const { document_id, block_id, user_token, page_size, page_token } = request.query as any
     if (!document_id || !block_id || !user_token) {
       return reply.status(400).send({ success: false, error: 'document_id, block_id, and user_token are required' })
     }
@@ -401,15 +423,9 @@ app.get("/api/feishu/get-children", async (request: FastifyRequest, reply: Fasti
   }
 })
 
-// 更新块内容
 app.put("/api/feishu/update-block", async (request: FastifyRequest, reply: FastifyReply) => {
   try {
-    const { document_id, block_id, user_token, update_blocks } = request.body as {
-      document_id?: string
-      block_id?: string
-      user_token?: string
-      update_blocks?: object[]
-    }
+    const { document_id, block_id, user_token, update_blocks } = request.body as any
     if (!document_id || !block_id || !user_token || !update_blocks) {
       return reply.status(400).send({ success: false, error: 'document_id, block_id, user_token, and update_blocks are required' })
     }
@@ -425,14 +441,9 @@ app.put("/api/feishu/update-block", async (request: FastifyRequest, reply: Fasti
   }
 })
 
-// 批量更新块内容
 app.put("/api/feishu/batch-update-blocks", async (request: FastifyRequest, reply: FastifyReply) => {
   try {
-    const { document_id, user_token, requests } = request.body as {
-      document_id?: string
-      user_token?: string
-      requests?: object[]
-    }
+    const { document_id, user_token, requests } = request.body as any
     if (!document_id || !user_token || !requests) {
       return reply.status(400).send({ success: false, error: 'document_id, user_token, and requests are required' })
     }
@@ -448,14 +459,9 @@ app.put("/api/feishu/batch-update-blocks", async (request: FastifyRequest, reply
   }
 })
 
-// 删除块
 app.delete("/api/feishu/delete-block", async (request: FastifyRequest, reply: FastifyReply) => {
   try {
-    const { document_id, block_id, user_token } = request.query as {
-      document_id?: string
-      block_id?: string
-      user_token?: string
-    }
+    const { document_id, block_id, user_token } = request.query as any
     if (!document_id || !block_id || !user_token) {
       return reply.status(400).send({ success: false, error: 'document_id, block_id, and user_token are required' })
     }
@@ -470,7 +476,6 @@ app.delete("/api/feishu/delete-block", async (request: FastifyRequest, reply: Fa
   }
 })
 
-// ── 启动 ─────────────────────────────────────────────────────────────
 const PORT = Number(process.env.PORT ?? 3001)
 
 try {
@@ -480,12 +485,6 @@ try {
   process.exit(1)
 }
 
-
-
-
-
-
-// 优雅关闭
 const shutdown = async () => {
   await app.close()
   process.exit(0)

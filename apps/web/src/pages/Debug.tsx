@@ -25,6 +25,12 @@ export default function Debug() {
   const [documentId, setDocumentId] = useState('')
   const [manualCode, setManualCode] = useState('')
 
+  // 发送消息状态
+  const [receiveId, setReceiveId] = useState('')
+  const [receiveIdType, setReceiveIdType] = useState<'open_id' | 'user_id' | 'union_id' | 'email' | 'chat_id'>('open_id')
+  const [msgType, setMsgType] = useState<'text' | 'post' | 'interactive'>('text')
+  const [messageContent, setMessageContent] = useState('')
+
   // 检查 URL 中的 token 参数（OAuth 回调）
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -251,6 +257,59 @@ export default function Debug() {
     setLoading(false)
   }
 
+  // 发送消息
+  const sendMessage = async () => {
+    if (!receiveId) {
+      alert('请输入接收者 ID')
+      return
+    }
+    if (!messageContent) {
+      alert('请输入消息内容')
+      return
+    }
+    if (!userToken) {
+      alert('请先获取 Token')
+      return
+    }
+
+    setLoading(true)
+    const start = Date.now()
+
+    try {
+      let content: string
+      if (msgType === 'text') {
+        content = JSON.stringify({ text: messageContent })
+      } else if (msgType === 'post') {
+        // 富文本消息格式
+        content = JSON.stringify({
+          zh_cn: {
+            title: '飞书通知',
+            content: [[{
+              tag: 'text',
+              text: messageContent,
+            }]]
+          }
+        })
+      } else {
+        content = JSON.stringify({ text: messageContent })
+      }
+
+      const uuid = crypto.randomUUID()
+
+      await callApi('/api/feishu/send-message', {
+        receive_id: receiveId,
+        receive_id_type: receiveIdType,
+        msg_type: msgType,
+        content,
+        uuid,
+      })
+    } catch (err) {
+      addResult('/api/feishu/send-message', { error: String(err) }, `${Date.now() - start}ms`)
+    }
+
+    setLoading(false)
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-6xl mx-auto">
@@ -330,6 +389,72 @@ export default function Debug() {
               </a>
             </div>
           )}
+        </div>
+
+        {/* 发送消息测试 */}
+        <div className="bg-white rounded-lg shadow p-4 mb-6">
+          <h2 className="font-semibold text-gray-700 mb-3">📨 发送消息测试</h2>
+          <p className="text-sm text-gray-600 mb-3">通过机器人向用户或群组发送消息</p>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">接收者 ID 类型</label>
+              <select
+                value={receiveIdType}
+                onChange={e => setReceiveIdType(e.target.value as any)}
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="open_id">open_id</option>
+                <option value="user_id">user_id</option>
+                <option value="union_id">union_id</option>
+                <option value="email">email</option>
+                <option value="chat_id">chat_id（群组）</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">消息类型</label>
+              <select
+                value={msgType}
+                onChange={e => setMsgType(e.target.value as any)}
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="text">文本消息</option>
+                <option value="post">富文本消息</option>
+                <option value="interactive">卡片消息</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm text-gray-600 mb-1">接收者 ID（open_id / user_id / chat_id）</label>
+            <input
+              type="text"
+              value={receiveId}
+              onChange={e => setReceiveId(e.target.value)}
+              placeholder="例如：ou_c2c620cfd86e5c67267919847143b696"
+              className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm text-gray-600 mb-1">消息内容</label>
+            <textarea
+              value={messageContent}
+              onChange={e => setMessageContent(e.target.value)}
+              placeholder="输入要发送的消息内容"
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <button
+            onClick={sendMessage}
+            disabled={loading || !userToken || !receiveId || !messageContent}
+            className="px-6 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50 font-medium"
+          >
+            {loading ? '发送中...' : '📤 发送消息'}
+          </button>
+          <p className="text-xs text-gray-500 mt-2">提示：接收者需要在机器人的可用范围内，向群组发送时机器人需在群内</p>
         </div>
 
         {/* Token 状态 */}

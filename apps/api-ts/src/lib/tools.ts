@@ -15,6 +15,10 @@ type ToolFunctionParams = {
   blocks?: object[]
   update_blocks?: object[]
   requests?: object[]
+  department_id?: string
+  fetch_child?: boolean
+  user_id_type?: string
+  department_id_type?: string
 }
 
 type ToolParams = ToolFunctionParams
@@ -101,6 +105,34 @@ export async function createDocument(params: ToolParams): Promise<ToolResult> {
   }
 }
 
+// ── 通讯录工具函数 ──────────────────────────────────────────────────
+
+export async function getDepartmentChildren(params: ToolParams): Promise<ToolResult> {
+  try {
+    const { user_token, department_id, fetch_child, page_size, page_token, user_id_type, department_id_type } = params
+    if (!department_id) {
+      return { success: false, error: 'department_id is required' }
+    }
+    const result = await axios.get(
+      `https://open.feishu.cn/open-apis/contact/v3/departments/${department_id}/children`,
+      {
+        headers: { Authorization: `Bearer ${user_token || ''}` },
+        params: {
+          fetch_child: fetch_child,
+          page_size: page_size || 50,
+          page_token: page_token || undefined,
+          user_id_type: user_id_type || 'open_id',
+          department_id_type: department_id_type || 'open_department_id',
+        },
+      }
+    )
+    return { success: true, data: result.data }
+  } catch (err) {
+    const error = err as { message?: string; response?: { data?: unknown } }
+    return { success: false, error: error.message, data: error.response?.data }
+  }
+}
+
 const tools = [
   {
     type: "function",
@@ -165,6 +197,26 @@ const tools = [
           title: { type: "string", description: "文档标题" }
         },
         required: ["user_token", "title"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "getDepartmentChildren",
+      description: "获取指定部门的子部门列表",
+      parameters: {
+        type: "object",
+        properties: {
+          user_token: { type: "string", description: "飞书用户访问令牌（可选，不填则使用 tenant token）" },
+          department_id: { type: "string", description: "部门 ID，根部门为 0" },
+          fetch_child: { type: "boolean", description: "是否递归获取子部门，默认 false" },
+          page_size: { type: "number", description: "每页数量，最大 50，默认 50" },
+          page_token: { type: "string", description: "分页标记" },
+          user_id_type: { type: "string", enum: ["open_id", "union_id", "user_id"], description: "用户 ID 类型" },
+          department_id_type: { type: "string", enum: ["open_department_id", "department_id"], description: "部门 ID 类型" }
+        },
+        required: ["department_id"]
       }
     }
   }
@@ -308,6 +360,7 @@ export const toolFunctions: Record<string, (params: any) => Promise<ToolResult>>
   getDocumentContent,
   createFileFolder,
   createDocument,
+  getDepartmentChildren,
   createBlock,
   createNestedBlocks,
   getBlock,

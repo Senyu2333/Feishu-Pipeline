@@ -65,6 +65,7 @@ func NewApplication(ctx context.Context, configPath string, version string) (*Ap
 		AppSecret:          cfg.Feishu.AppSecret,
 		RedirectURL:        cfg.Feishu.RedirectURL,
 		OpenBaseURL:        cfg.Feishu.OpenBaseURL,
+		OAuthScope:         cfg.Feishu.OAuthScope,
 		BotName:            cfg.Feishu.BotName,
 		ReceiveIDType:      cfg.Feishu.ReceiveIDType,
 		DocFolderToken:     cfg.Feishu.DocFolderToken,

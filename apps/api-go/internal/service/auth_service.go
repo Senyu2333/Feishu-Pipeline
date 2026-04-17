@@ -39,6 +39,10 @@ func (s *AuthService) FeishuEnabled() bool {
 	return s.feishuClient.Enabled()
 }
 
+func (s *AuthService) FeishuOAuthScope() string {
+	return s.feishuClient.OAuthScope()
+}
+
 func (s *AuthService) LoginByCode(ctx context.Context, code string) (model.User, model.LoginSession, error) {
 	token, err := s.feishuClient.ExchangeCodeForUserToken(ctx, code)
 	if err != nil {

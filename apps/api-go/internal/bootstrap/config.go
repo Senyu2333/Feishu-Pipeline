@@ -39,6 +39,7 @@ type FeishuConfig struct {
 	AppSecret          string `mapstructure:"app_secret"`
 	RedirectURL        string `mapstructure:"redirect_url"`
 	OpenBaseURL        string `mapstructure:"open_base_url"`
+	OAuthScope         string `mapstructure:"oauth_scope"`
 	BotName            string `mapstructure:"bot_name"`
 	ReceiveIDType      string `mapstructure:"receive_id_type"`
 	DocFolderToken     string `mapstructure:"doc_folder_token"`

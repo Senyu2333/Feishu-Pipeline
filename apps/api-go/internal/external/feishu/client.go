@@ -77,6 +77,7 @@ type Config struct {
 	BitableAppToken    string
 	BitableTableID     string
 	BaseURL            string
+	OAuthScope         string
 }
 
 type TaskRecordResult struct {
@@ -115,6 +116,10 @@ func (c *Client) Enabled() bool {
 
 func (c *Client) AppID() string {
 	return c.cfg.AppID
+}
+
+func (c *Client) OAuthScope() string {
+	return c.cfg.OAuthScope
 }
 
 func (c *Client) GetAppAccessToken(ctx context.Context) (string, error) {
@@ -329,8 +334,11 @@ func (c *Client) ListUserDepartments(ctx context.Context, userAccessToken string
 		return nil, err
 	}
 	if response.Code != 0 {
-		return nil, fmt.Errorf("get user profile for departments failed: %s", response.Msg)
+		return nil, fmt.Errorf("get user profile for departments failed (code=%d): %s", response.Code, response.Msg)
 	}
+
+	fmt.Printf("[feishu] ListUserDepartments user=%s department_ids=%v department_path_count=%d\n",
+		userIdentifier, response.Data.User.DepartmentIDs, len(response.Data.User.DepartmentPath))
 
 	orderedDepartmentIDs := make([]string, 0, len(response.Data.User.DepartmentIDs))
 	seenDepartmentIDs := make(map[string]struct{}, len(response.Data.User.DepartmentIDs))

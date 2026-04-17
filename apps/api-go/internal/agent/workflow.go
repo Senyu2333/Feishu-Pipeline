@@ -445,3 +445,32 @@ func max(a int, b int) int {
 	}
 	return b
 }
+
+func defaultNotifyContent(requirementTitle string, task model.Task) string {
+	return fmt.Sprintf("你有新的需求任务《%s》：%s，优先级 %s，预计 %d 天，请按排期推进并及时同步状态。", requirementTitle, task.Title, task.Priority, task.EstimateDays)
+}
+
+func conversationFromMessages(messages []model.Message) string {
+	lines := make([]string, 0, len(messages))
+	for _, message := range messages {
+		if message.Role == model.MessageUser {
+			lines = append(lines, strings.TrimSpace(message.Content))
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func sessionTitle(state *pipelineState) string {
+	title := strings.TrimSpace(state.Input.Session.Session.Title)
+	if title == "" {
+		return "未命名需求"
+	}
+	return title
+}
+
+func max(a int, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}

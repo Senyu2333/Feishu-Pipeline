@@ -298,7 +298,7 @@ func (c *Client) ListUserDepartments(ctx context.Context, userAccessToken string
 		userIDType = "user_id"
 	}
 
-	path := fmt.Sprintf("/open-apis/contact/v3/users/%s?user_id_type=%s&department_id_type=department_id&user_fields=department_path,department_ids,name,status,email,mobile", url.PathEscape(userIdentifier), url.QueryEscape(userIDType))
+	path := fmt.Sprintf("/open-apis/contact/v3/users/%s?user_id_type=%s&department_id_type=department_id&user_fields=department_path,department_ids,name", url.PathEscape(userIdentifier), url.QueryEscape(userIDType))
 	var response struct {
 		Code int    `json:"code"`
 		Msg  string `json:"msg"`
@@ -336,9 +336,6 @@ func (c *Client) ListUserDepartments(ctx context.Context, userAccessToken string
 	if response.Code != 0 {
 		return nil, fmt.Errorf("get user profile for departments failed (code=%d): %s", response.Code, response.Msg)
 	}
-
-	fmt.Printf("[feishu] ListUserDepartments user=%s department_ids=%v department_path_count=%d\n",
-		userIdentifier, response.Data.User.DepartmentIDs, len(response.Data.User.DepartmentPath))
 
 	orderedDepartmentIDs := make([]string, 0, len(response.Data.User.DepartmentIDs))
 	seenDepartmentIDs := make(map[string]struct{}, len(response.Data.User.DepartmentIDs))

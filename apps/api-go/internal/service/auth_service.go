@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"log"
 	"regexp"
 	"strings"
 	"time"
@@ -108,8 +109,14 @@ func (s *AuthService) CurrentUser(ctx context.Context, userID string) (model.Use
 
 	user, err := s.repository.FindUserByID(ctx, userID)
 	if err == nil {
-		if _, refreshErr := s.EnsureFreshCredential(ctx, userID); refreshErr != nil && !errors.Is(refreshErr, gorm.ErrRecordNotFound) {
+		credential, refreshErr := s.EnsureFreshCredential(ctx, userID)
+		if refreshErr != nil && !errors.Is(refreshErr, gorm.ErrRecordNotFound) {
 			return model.User{}, refreshErr
+		}
+		if user.Role == model.RoleOther && refreshErr == nil {
+			if updated, syncErr := s.syncDepartments(ctx, &user, credential.AccessToken, credential.FeishuUserID, credential.OpenID); syncErr == nil && updated {
+				return user, nil
+			}
 		}
 		return user, nil
 	}
@@ -117,6 +124,49 @@ func (s *AuthService) CurrentUser(ctx context.Context, userID string) (model.Use
 		return model.User{}, ErrAuthenticationRequired
 	}
 	return user, err
+}
+
+func (s *AuthService) syncDepartments(ctx context.Context, user *model.User, accessToken string, feishuUserID string, openID string) (bool, error) {
+	userIdentifier := strings.TrimSpace(openID)
+	userIDType := "open_id"
+	if userIdentifier == "" {
+		userIdentifier = strings.TrimSpace(feishuUserID)
+		userIDType = "user_id"
+	}
+	if userIdentifier == "" {
+		return false, nil
+	}
+
+	departments, err := s.feishuClient.ListUserDepartments(ctx, accessToken, userIdentifier, userIDType)
+	if err != nil {
+		log.Printf("[sync] department sync failed for user %s: %v", user.ID, err)
+		return false, err
+	}
+
+	names := make([]string, 0, len(departments))
+	for _, d := range departments {
+		name := strings.TrimSpace(d.Name)
+		if name == "" {
+			name = strings.TrimSpace(d.NameEN)
+		}
+		if name != "" {
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return false, nil
+	}
+
+	user.Departments = names
+	newRole := classifyRoleByDepartments(names)
+	if newRole != model.RoleOther {
+		user.Role = newRole
+	}
+	if err := s.repository.UpsertUser(ctx, user); err != nil {
+		return false, err
+	}
+	log.Printf("[sync] department synced for user %s: departments=%v role=%s", user.ID, names, user.Role)
+	return true, nil
 }
 
 func (s *AuthService) ResolveSessionUserID(ctx context.Context, sessionID string) (string, error) {
@@ -194,11 +244,11 @@ func mapProfileToUser(profile feishu.UserProfile) model.User {
 }
 
 func (s *AuthService) resolveDepartments(ctx context.Context, userAccessToken string, profile feishu.UserProfile) ([]string, error) {
-	userIdentifier := strings.TrimSpace(profile.FeishuUserID)
-	userIDType := "user_id"
+	userIdentifier := strings.TrimSpace(profile.OpenID)
+	userIDType := "open_id"
 	if userIdentifier == "" {
-		userIdentifier = strings.TrimSpace(profile.OpenID)
-		userIDType = "open_id"
+		userIdentifier = strings.TrimSpace(profile.FeishuUserID)
+		userIDType = "user_id"
 	}
 	if userIdentifier == "" {
 		return []string{"其他"}, errors.New("feishu user identifier is empty")

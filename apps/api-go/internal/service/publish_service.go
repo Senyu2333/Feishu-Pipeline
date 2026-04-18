@@ -30,12 +30,13 @@ type PublishService struct {
 	pipelineService *PipelineService
 }
 
-func NewPublishService(repository *repo.Repository, authService *AuthService, agentEngine *agent.Engine, feishuClient *feishu.Client) *PublishService {
+func NewPublishService(repository *repo.Repository, authService *AuthService, agentEngine *agent.Engine, feishuClient *feishu.Client, pipelineService *PipelineService) *PublishService {
 	return &PublishService{
-		repository:   repository,
-		authService:  authService,
-		agentEngine:  agentEngine,
-		feishuClient: feishuClient,
+		repository:      repository,
+		authService:     authService,
+		agentEngine:     agentEngine,
+		feishuClient:    feishuClient,
+		pipelineService: pipelineService,
 	}
 }
 

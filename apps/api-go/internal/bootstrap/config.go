@@ -34,19 +34,20 @@ type DatabaseConfig struct {
 }
 
 type FeishuConfig struct {
-	Enabled            bool   `mapstructure:"enabled"`
-	AppID              string `mapstructure:"app_id"`
-	AppSecret          string `mapstructure:"app_secret"`
-	RedirectURL        string `mapstructure:"redirect_url"`
-	OpenBaseURL        string `mapstructure:"open_base_url"`
-	OAuthScope         string `mapstructure:"oauth_scope"`
-	BotName            string `mapstructure:"bot_name"`
-	ReceiveIDType      string `mapstructure:"receive_id_type"`
-	DocFolderToken     string `mapstructure:"doc_folder_token"`
-	BitableName        string `mapstructure:"bitable_name"`
-	BitableFolderToken string `mapstructure:"bitable_folder_token"`
-	BitableAppToken    string `mapstructure:"bitable_app_token"`
-	BitableTableID     string `mapstructure:"bitable_table_id"`
+	Enabled              bool   `mapstructure:"enabled"`
+	AppID                string `mapstructure:"app_id"`
+	AppSecret            string `mapstructure:"app_secret"`
+	RedirectURL          string `mapstructure:"redirect_url"`
+	OpenBaseURL          string `mapstructure:"open_base_url"`
+	OAuthScope           string `mapstructure:"oauth_scope"`
+	BotName              string `mapstructure:"bot_name"`
+	ReceiveIDType        string `mapstructure:"receive_id_type"`
+	DocFolderToken       string `mapstructure:"doc_folder_token"`
+	BitableName          string `mapstructure:"bitable_name"`
+	BitableFolderToken   string `mapstructure:"bitable_folder_token"`
+	BitableAppToken      string `mapstructure:"bitable_app_token"`
+	BitableTableID       string `mapstructure:"bitable_table_id"`
+	BitableTemplateToken string `mapstructure:"bitable_template_token"`
 }
 
 type AIConfig struct {

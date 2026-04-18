@@ -27,6 +27,7 @@ feishu:
   bitable_folder_token: ""
   bitable_app_token: ""
   bitable_table_id: ""
+  bitable_template_token: "A7krw99hJiatrZktgmzcOVmkn6d"
 
 ai:
   provider: "ark"

@@ -22,11 +22,12 @@ type PublishQueue interface {
 }
 
 type PublishService struct {
-	repository   *repo.Repository
-	authService  *AuthService
-	agentEngine  *agent.Engine
-	feishuClient *feishu.Client
-	queue        PublishQueue
+	repository      *repo.Repository
+	authService     *AuthService
+	agentEngine     *agent.Engine
+	feishuClient    *feishu.Client
+	queue           PublishQueue
+	pipelineService *PipelineService
 }
 
 func NewPublishService(repository *repo.Repository, authService *AuthService, agentEngine *agent.Engine, feishuClient *feishu.Client) *PublishService {
@@ -40,6 +41,10 @@ func NewPublishService(repository *repo.Repository, authService *AuthService, ag
 
 func (s *PublishService) SetQueue(queue PublishQueue) {
 	s.queue = queue
+}
+
+func (s *PublishService) SetPipelineService(ps *PipelineService) {
+	s.pipelineService = ps
 }
 
 func (s *PublishService) PublishSession(ctx context.Context, userID string, sessionID string) error {
@@ -206,6 +211,16 @@ func (s *PublishService) HandlePublish(ctx context.Context, payload job.PublishJ
 		return err
 	}
 	log.Printf("publish workflow persisted: session_id=%s requirement_id=%s tasks=%d deliveries=%d", payload.SessionID, output.Requirement.ID, len(output.Tasks), len(deliveries))
+
+	if s.pipelineService != nil && len(output.Tasks) > 0 {
+		result, pipelineErr := s.pipelineService.CreatePipeline(context.Background(), output.Tasks)
+		if pipelineErr != nil {
+			log.Printf("[pipeline] bitable creation failed: session_id=%s err=%v", payload.SessionID, pipelineErr)
+		} else {
+			log.Printf("[pipeline] bitable created: session_id=%s table_url=%s records=%d", payload.SessionID, result.TableURL, len(result.RecordIDs))
+		}
+	}
+
 	return nil
 }
 

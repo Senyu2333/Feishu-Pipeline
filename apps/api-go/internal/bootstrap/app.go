@@ -77,10 +77,12 @@ func NewApplication(ctx context.Context, configPath string, version string) (*Ap
 
 	authService := service.NewAuthService(repository, feishuClient, time.Duration(cfg.App.SessionTTLHours)*time.Hour)
 	healthService := service.NewHealthService(cfg.App.Name, cfg.App.Version)
-	sessionService := service.NewSessionService(repository, authService, aiClient)
 	taskService := service.NewTaskService(repository, feishuClient)
 	adminService := service.NewAdminService(repository)
-	publishService := service.NewPublishService(repository, authService, agentEngine, feishuClient)
+	pipelineService := service.NewPipelineService(feishuClient)
+	sessionService := service.NewSessionService(repository, authService, aiClient)
+	sessionService.SetPipelineService(pipelineService)
+	publishService := service.NewPublishService(repository, authService, agentEngine, feishuClient, pipelineService)
 	sessionService.SetPublisher(publishService)
 
 	runner := job.NewRunner(nil, publishService)
@@ -88,13 +90,14 @@ func NewApplication(ctx context.Context, configPath string, version string) (*Ap
 	runner.Start(ctx)
 
 	engine := router.New(router.Dependencies{
-		CookieName:        cfg.App.SessionCookieName,
-		HealthController:  controller.NewHealthController(healthService),
-		AuthController:    controller.NewAuthController(authService, cfg.App.SessionCookieName, time.Duration(cfg.App.SessionTTLHours)*time.Hour, cfg.App.CookieSecure, cfg.App.CookieSameSite),
-		SessionController: controller.NewSessionController(sessionService, publishService),
-		TaskController:    controller.NewTaskController(taskService),
-		AdminController:   controller.NewAdminController(adminService),
-		AuthService:       authService,
+		CookieName:         cfg.App.SessionCookieName,
+		HealthController:   controller.NewHealthController(healthService),
+		AuthController:     controller.NewAuthController(authService, cfg.App.SessionCookieName, time.Duration(cfg.App.SessionTTLHours)*time.Hour, cfg.App.CookieSecure, cfg.App.CookieSameSite),
+		SessionController:  controller.NewSessionController(sessionService, publishService),
+		TaskController:     controller.NewTaskController(taskService),
+		AdminController:    controller.NewAdminController(adminService),
+		PipelineController: controller.NewPipelineController(pipelineService),
+		AuthService:        authService,
 	})
 
 	server := &http.Server{

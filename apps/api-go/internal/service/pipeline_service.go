@@ -56,8 +56,6 @@ func (s *PipelineService) CreatePipeline(ctx context.Context, tasks []model.Task
 	for _, t := range tasks {
 		fields := map[string]any{
 			"需求":   t.Title,
-			"负责人":  t.AssigneeName,
-			"任务类型": string(t.Type),
 			"优先级":  string(t.Priority),
 			"状态":   "未开始",
 			"开始时间": now.UnixMilli(),
@@ -65,10 +63,7 @@ func (s *PipelineService) CreatePipeline(ctx context.Context, tasks []model.Task
 		if t.PlannedEndAt != nil {
 			fields["截止时间"] = t.PlannedEndAt.UnixMilli()
 		} else {
-			fields["截止时间"] = now.AddDate(0, 0, int(t.EstimateDays)).UnixMilli()
-		}
-		if t.DocURL != "" {
-			fields["文档链接"] = t.DocURL
+			fields["截止时间"] = now.AddDate(0, 0, max(int(t.EstimateDays), 1)).UnixMilli()
 		}
 		records = append(records, feishu.BitableRecord{Fields: fields})
 	}

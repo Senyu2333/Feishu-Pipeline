@@ -22,7 +22,7 @@ feishu:
   oauth_scope: "contact:contact.base:readonly contact:user.department:readonly contact:user.department_path:readonly"
   bot_name: "需求交付机器人"
   receive_id_type: "open_id"
-  doc_folder_token: ""
+  doc_folder_token: "DhAUfEwu9lkWdud17VAc4ycKn9P"
   bitable_name: "需求排期"
   bitable_folder_token: ""
   bitable_app_token: ""

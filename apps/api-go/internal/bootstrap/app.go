@@ -60,29 +60,30 @@ func NewApplication(ctx context.Context, configPath string, version string) (*Ap
 		return nil, err
 	}
 	feishuClient := feishu.NewClient(feishu.Config{
-		Enabled:            cfg.Feishu.Enabled,
-		AppID:              cfg.Feishu.AppID,
-		AppSecret:          cfg.Feishu.AppSecret,
-		RedirectURL:        cfg.Feishu.RedirectURL,
-		OpenBaseURL:        cfg.Feishu.OpenBaseURL,
-		BotName:            cfg.Feishu.BotName,
-		ReceiveIDType:      cfg.Feishu.ReceiveIDType,
-		DocFolderToken:     cfg.Feishu.DocFolderToken,
-		BitableName:        cfg.Feishu.BitableName,
-		BitableFolderToken: cfg.Feishu.BitableFolderToken,
-		BitableAppToken:    cfg.Feishu.BitableAppToken,
-		BitableTableID:     cfg.Feishu.BitableTableID,
-		BaseURL:            cfg.App.BaseURL,
+		Enabled:              cfg.Feishu.Enabled,
+		AppID:                cfg.Feishu.AppID,
+		AppSecret:            cfg.Feishu.AppSecret,
+		RedirectURL:          cfg.Feishu.RedirectURL,
+		OpenBaseURL:          cfg.Feishu.OpenBaseURL,
+		OAuthScope:           cfg.Feishu.OAuthScope,
+		BotName:              cfg.Feishu.BotName,
+		ReceiveIDType:        cfg.Feishu.ReceiveIDType,
+		DocFolderToken:       cfg.Feishu.DocFolderToken,
+		BitableName:          cfg.Feishu.BitableName,
+		BitableFolderToken:   cfg.Feishu.BitableFolderToken,
+		BitableAppToken:      cfg.Feishu.BitableAppToken,
+		BitableTableID:       cfg.Feishu.BitableTableID,
+		BitableTemplateToken: cfg.Feishu.BitableTemplateToken,
+		BaseURL:              cfg.App.BaseURL,
 	})
 
 	authService := service.NewAuthService(repository, feishuClient, time.Duration(cfg.App.SessionTTLHours)*time.Hour)
 	healthService := service.NewHealthService(cfg.App.Name, cfg.App.Version)
 	taskService := service.NewTaskService(repository, feishuClient)
 	adminService := service.NewAdminService(repository)
+	publishService := service.NewPublishService(repository, authService, agentEngine, feishuClient)
 	pipelineService := service.NewPipelineService(feishuClient)
-	sessionService := service.NewSessionService(repository, authService, aiClient)
-	sessionService.SetPipelineService(pipelineService)
-	publishService := service.NewPublishService(repository, authService, agentEngine, feishuClient, pipelineService)
+	publishService.SetPipelineService(pipelineService)
 	sessionService.SetPublisher(publishService)
 
 	runner := job.NewRunner(nil, publishService)

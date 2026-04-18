@@ -64,19 +64,21 @@ type Department struct {
 }
 
 type Config struct {
-	Enabled            bool
-	AppID              string
-	AppSecret          string
-	RedirectURL        string
-	OpenBaseURL        string
-	BotName            string
-	ReceiveIDType      string
-	DocFolderToken     string
-	BitableName        string
-	BitableFolderToken string
-	BitableAppToken    string
-	BitableTableID     string
-	BaseURL            string
+	Enabled              bool
+	AppID                string
+	AppSecret            string
+	RedirectURL          string
+	OpenBaseURL          string
+	BotName              string
+	ReceiveIDType        string
+	DocFolderToken       string
+	BitableName          string
+	BitableFolderToken   string
+	BitableAppToken      string
+	BitableTableID       string
+	BitableTemplateToken string
+	BaseURL              string
+	OAuthScope           string
 }
 
 type TaskRecordResult struct {
@@ -115,6 +117,10 @@ func (c *Client) Enabled() bool {
 
 func (c *Client) AppID() string {
 	return c.cfg.AppID
+}
+
+func (c *Client) OAuthScope() string {
+	return c.cfg.OAuthScope
 }
 
 func (c *Client) GetAppAccessToken(ctx context.Context) (string, error) {
@@ -293,7 +299,7 @@ func (c *Client) ListUserDepartments(ctx context.Context, userAccessToken string
 		userIDType = "user_id"
 	}
 
-	path := fmt.Sprintf("/open-apis/contact/v3/users/%s?user_id_type=%s&department_id_type=department_id&user_fields=department_path,department_ids,name,status,email,mobile", url.PathEscape(userIdentifier), url.QueryEscape(userIDType))
+	path := fmt.Sprintf("/open-apis/contact/v3/users/%s?user_id_type=%s&department_id_type=department_id&user_fields=department_path,department_ids,name", url.PathEscape(userIdentifier), url.QueryEscape(userIDType))
 	var response struct {
 		Code int    `json:"code"`
 		Msg  string `json:"msg"`
@@ -329,7 +335,7 @@ func (c *Client) ListUserDepartments(ctx context.Context, userAccessToken string
 		return nil, err
 	}
 	if response.Code != 0 {
-		return nil, fmt.Errorf("get user profile for departments failed: %s", response.Msg)
+		return nil, fmt.Errorf("get user profile for departments failed (code=%d): %s", response.Code, response.Msg)
 	}
 
 	orderedDepartmentIDs := make([]string, 0, len(response.Data.User.DepartmentIDs))
@@ -1043,6 +1049,126 @@ func (c *Client) buildTaskRecordFields(task model.Task) map[string]any {
 func (c *Client) openAPIURL(path string) string {
 	base := strings.TrimRight(utils.Coalesce(c.cfg.OpenBaseURL, "https://open.feishu.cn"), "/")
 	return base + path
+}
+
+type BitableRecord struct {
+	Fields map[string]any `json:"fields"`
+}
+
+func (c *Client) CopyBitableTemplate(ctx context.Context, templateAppToken string) (string, error) {
+	token, err := c.GetAppAccessToken(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	body, _ := json.Marshal(map[string]any{
+		"name":            "AI 生成任务表格",
+		"without_content": false,
+		"time_zone":       "Asia/Shanghai",
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.openAPIURL(fmt.Sprintf("/open-apis/bitable/v1/apps/%s/copy", templateAppToken)),
+		bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+	var resp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			App struct {
+				AppToken string `json:"app_token"`
+			} `json:"app"`
+		} `json:"data"`
+	}
+	if err := c.doJSON(req, &resp); err != nil {
+		return "", err
+	}
+	if resp.Code != 0 {
+		return "", fmt.Errorf("copy bitable template failed: %s", resp.Msg)
+	}
+	return resp.Data.App.AppToken, nil
+}
+
+func (c *Client) GetBitableTableID(ctx context.Context, appToken string) (string, error) {
+	token, err := c.GetAppAccessToken(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		c.openAPIURL(fmt.Sprintf("/open-apis/bitable/v1/apps/%s/tables", appToken)),
+		nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	var resp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			Items []struct {
+				TableID string `json:"table_id"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	if err := c.doJSON(req, &resp); err != nil {
+		return "", err
+	}
+	if resp.Code != 0 {
+		return "", fmt.Errorf("get bitable tables failed: %s", resp.Msg)
+	}
+	if len(resp.Data.Items) == 0 {
+		return "", fmt.Errorf("no tables found in bitable app %s", appToken)
+	}
+	return resp.Data.Items[0].TableID, nil
+}
+
+func (c *Client) BatchCreateBitableRecords(ctx context.Context, appToken, tableID string, records []BitableRecord) ([]string, error) {
+	token, err := c.GetAppAccessToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	body, _ := json.Marshal(map[string]any{"records": records})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.openAPIURL(fmt.Sprintf("/open-apis/bitable/v1/apps/%s/tables/%s/records/batch_create", appToken, tableID)),
+		bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+	var resp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			Records []struct {
+				RecordID string `json:"record_id"`
+			} `json:"records"`
+		} `json:"data"`
+	}
+	if err := c.doJSON(req, &resp); err != nil {
+		return nil, err
+	}
+	if resp.Code != 0 {
+		return nil, fmt.Errorf("batch create bitable records failed: %s", resp.Msg)
+	}
+
+	ids := make([]string, len(resp.Data.Records))
+	for i, r := range resp.Data.Records {
+		ids[i] = r.RecordID
+	}
+	return ids, nil
+}
+
+func (c *Client) BitableTemplateToken() string {
+	return c.cfg.BitableTemplateToken
 }
 
 func (c *Client) doJSON(req *http.Request, target any) error {

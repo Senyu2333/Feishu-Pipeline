@@ -58,7 +58,11 @@ func (c *ArkClient) Generate(ctx context.Context, systemPrompt string, userPromp
 	if err != nil {
 		return "", fmt.Errorf("generate with ark: %w", err)
 	}
-	return strings.TrimSpace(message.Content), nil
+	content := strings.TrimSpace(message.Content)
+	if content == "" {
+		return "", fmt.Errorf("ark returned empty content (reasoning_content may be non-empty)")
+	}
+	return content, nil
 }
 
 // GenerateStream 调用 Ark Stream 接口，逐 token 发送到 ch

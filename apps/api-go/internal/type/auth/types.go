@@ -19,6 +19,7 @@ type FeishuSSOLoginRequest struct {
 type FeishuSSOConfigResponse struct {
 	Enabled bool   `json:"enabled"`
 	AppID   string `json:"appId,omitempty"`
+	Scope   string `json:"scope,omitempty"`
 }
 
 type LoginResponse struct {

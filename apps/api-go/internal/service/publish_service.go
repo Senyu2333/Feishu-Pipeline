@@ -26,8 +26,8 @@ type PublishService struct {
 	authService     *AuthService
 	agentEngine     *agent.Engine
 	feishuClient    *feishu.Client
-	pipelineService *PipelineService
 	queue           PublishQueue
+	pipelineService *PipelineService
 }
 
 func NewPublishService(repository *repo.Repository, authService *AuthService, agentEngine *agent.Engine, feishuClient *feishu.Client, pipelineService *PipelineService) *PublishService {
@@ -42,6 +42,10 @@ func NewPublishService(repository *repo.Repository, authService *AuthService, ag
 
 func (s *PublishService) SetQueue(queue PublishQueue) {
 	s.queue = queue
+}
+
+func (s *PublishService) SetPipelineService(ps *PipelineService) {
+	s.pipelineService = ps
 }
 
 func (s *PublishService) PublishSession(ctx context.Context, userID string, sessionID string) error {
@@ -209,35 +213,13 @@ func (s *PublishService) HandlePublish(ctx context.Context, payload job.PublishJ
 	}
 	log.Printf("publish workflow persisted: session_id=%s requirement_id=%s tasks=%d deliveries=%d", payload.SessionID, output.Requirement.ID, len(output.Tasks), len(deliveries))
 
-	// AI 流水线完成后自动创建飞书多维表格
-	tasks := make([]PipelineTask, 0, len(output.Tasks))
-	for _, t := range output.Tasks {
-		tasks = append(tasks, PipelineTask{
-			ID:                 t.ID,
-			SessionID:          t.SessionID,
-			Title:              t.Title,
-			Description:        t.Description,
-			Type:               string(t.Type),
-			Status:             string(t.Status),
-			AssigneeName:       t.AssigneeName,
-			AssigneeRole:       string(t.AssigneeRole),
-			AcceptanceCriteria: t.AcceptanceCriteria,
-			Risks:              t.Risks,
-		})
-	}
-	result, pipelineErr := s.pipelineService.CreatePipeline(context.Background(), PipelineResult{
-		Requirement: PipelineRequirement{
-			ID:        output.Requirement.ID,
-			SessionID: output.Requirement.SessionID,
-			Title:     output.Requirement.Title,
-			Summary:   output.Requirement.Summary,
-		},
-		Tasks: tasks,
-	})
-	if pipelineErr != nil {
-		log.Printf("[pipeline] 创建飞书多维表格失败: %v", pipelineErr)
-	} else {
-		log.Printf("[pipeline] 飞书多维表格创建成功: %s", result.TableURL)
+	if s.pipelineService != nil && len(output.Tasks) > 0 {
+		result, pipelineErr := s.pipelineService.CreatePipeline(context.Background(), output.Tasks)
+		if pipelineErr != nil {
+			log.Printf("[pipeline] bitable creation failed: session_id=%s err=%v", payload.SessionID, pipelineErr)
+		} else {
+			log.Printf("[pipeline] bitable created: session_id=%s table_url=%s records=%d", payload.SessionID, result.TableURL, len(result.RecordIDs))
+		}
 	}
 
 	return nil

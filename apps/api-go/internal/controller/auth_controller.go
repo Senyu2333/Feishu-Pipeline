@@ -39,6 +39,7 @@ func (c *AuthController) FeishuConfig(ctx *gin.Context) {
 	writeSuccess(ctx, http.StatusOK, authtype.FeishuSSOConfigResponse{
 		Enabled: c.authService.FeishuEnabled(),
 		AppID:   c.authService.FeishuAppID(),
+		Scope:   c.authService.FeishuOAuthScope(),
 	})
 }
 

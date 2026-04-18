@@ -17,17 +17,13 @@ func NewPipelineController(pipelineService *service.PipelineService) *PipelineCo
 }
 
 func (c *PipelineController) Create(ctx *gin.Context) {
-	var req service.PipelineResult
+	var req struct {
+		SessionID string `json:"sessionId" binding:"required"`
+	}
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		writeError(ctx, http.StatusBadRequest, err)
 		return
 	}
 
-	result, err := c.pipelineService.CreatePipeline(ctx.Request.Context(), req)
-	if err != nil {
-		writeError(ctx, http.StatusInternalServerError, err)
-		return
-	}
-
-	writeSuccess(ctx, http.StatusOK, result)
+	writeSuccess(ctx, statusOK, map[string]string{"message": "use publish workflow to create bitable automatically", "sessionId": req.SessionID})
 }

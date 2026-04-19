@@ -79,11 +79,11 @@ func NewApplication(ctx context.Context, configPath string, version string) (*Ap
 
 	authService := service.NewAuthService(repository, feishuClient, time.Duration(cfg.App.SessionTTLHours)*time.Hour)
 	healthService := service.NewHealthService(cfg.App.Name, cfg.App.Version)
+	sessionService := service.NewSessionService(repository, authService, aiClient)
 	taskService := service.NewTaskService(repository, feishuClient)
 	adminService := service.NewAdminService(repository)
-	publishService := service.NewPublishService(repository, authService, agentEngine, feishuClient)
 	pipelineService := service.NewPipelineService(feishuClient)
-	publishService.SetPipelineService(pipelineService)
+	publishService := service.NewPublishService(repository, authService, agentEngine, feishuClient, pipelineService)
 	sessionService.SetPublisher(publishService)
 
 	runner := job.NewRunner(nil, publishService)

@@ -339,9 +339,6 @@ app.post("/api/ai/chat/stream", async (request: FastifyRequest, reply: FastifyRe
   try {
     const { message, document_content, user_token, open_id } = request.body as any
     
-    console.log('[AI Chat Stream] Received request:', { message: message?.substring(0, 100), user_token: user_token?.substring(0, 20) })
-    console.log('[AI Chat Stream] OPENAI_API_KEY:', process.env.OPENAI_API_KEY?.substring(0, 10) + '...')
-    
     if (!message) {
       return reply.status(400).send({ error: 'message is required' })
     }

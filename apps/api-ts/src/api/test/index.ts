@@ -742,7 +742,6 @@ const openai = new OpenAI({
 
 export async function runAIChat(userMessage: string, messages: any[] = [], isFirstCall: boolean = true, userToken?: string, openId?: string) {
     const apiKey = process.env.OPENAI_API_KEY
-    console.log('[runAIChat] Using API Key:', apiKey?.substring(0, 10) + '...')
     const client = new OpenAI({
         apiKey: apiKey,
         baseURL: "https://api.deepseek.com"

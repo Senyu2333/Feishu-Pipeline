@@ -78,7 +78,9 @@ app.get("/api/feishu/oauth-url", async (_request: FastifyRequest, reply: Fastify
       'docx:document:create',
       'docx:document',
       'docx:document:readonly',
+      'drive:drive',
       'drive:drive:readonly',
+      'space:document:retrieve',
       'contact:contact.base:readonly',
       'contact:department.base:readonly',
       'contact:department.organize:readonly',
@@ -260,6 +262,34 @@ app.get("/api/feishu/document-content", async (request: FastifyRequest, reply: F
   } catch (err) {
     const error = err as Error
     return reply.status(500).send({ success: false, error: error.message })
+  }
+})
+
+app.get("/api/feishu/wiki-spaces", async (request: FastifyRequest, reply: FastifyReply) => {
+  try {
+    const { user_token, folder_token } = request.query as any
+    if (!user_token) {
+      return reply.status(400).send({ success: false, error: 'user_token is required' })
+    }
+    const result = await axios.get(
+      'https://open.feishu.cn/open-apis/drive/v1/files',
+      {
+        headers: { Authorization: `Bearer ${user_token}` },
+        params: { 
+          page_size: 50,
+          folder_token: folder_token || undefined,
+        },
+      }
+    )
+    return reply.send({ success: true, data: result.data })
+  } catch (err: any) {
+    const errorCode = err.response?.status || 500
+    const errorMsg = err.response?.data?.msg || err.message
+    return reply.status(errorCode).send({ 
+      success: false, 
+      error: errorMsg,
+      code: errorCode
+    })
   }
 })
 

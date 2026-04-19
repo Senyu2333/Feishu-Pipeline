@@ -1,4 +1,4 @@
-import { Card, Form, Input, Select, Radio, DatePicker, Button, Space, Tag, Timeline } from 'antd'
+import { Card, Form, Input, Select, DatePicker, Button, Space, Tag, Timeline, Drawer, List, Spin } from 'antd'
 import { useState, useEffect } from 'react'
 import Sidebar from '../components/Sidebar'
 
@@ -37,6 +37,12 @@ export default function NewRequirement() {
   // AI 生成状态
   const [aiChainItems, setAiChainItems] = useState<AiChainItem[]>([])
   const [isAiGenerating, setIsAiGenerating] = useState(false)
+  const [selectedDocUrls, setSelectedDocUrls] = useState<string[]>([])
+  const [wikiSpaces, setWikiSpaces] = useState<any[]>([])
+  const [drawerVisible, setDrawerVisible] = useState(false)
+  const [loadingSpaces, setLoadingSpaces] = useState(false)
+  const [currentFolder, setCurrentFolder] = useState<string>('')
+  const [folderHistory, setFolderHistory] = useState<{token: string, name: string}[]>([])
   
   const sidebarWidth = 80
   
@@ -48,22 +54,33 @@ export default function NewRequirement() {
       return
     }
 
+    try {
+      await form.validateFields()
+    } catch {
+      return 
+    }
+
     console.log('提交的 Leaders:', leaders)
 
     // 获取表单数据
     const formData = form.getFieldsValue()
-    const requirementTitle = formData['requirement_title'] || formData[0] || '未命名需求'
+    const priority = formData['priority'] || ''
+    const businessType = formData['business_type'] || ''
+    const targetDate = formData['target_date']
+    const deadlineStr = targetDate ? `，截止时间：${targetDate.format('YYYY-MM-DD')}` : ''
+    const autoTitle = priority && businessType ? `[${priority}]${businessType}需求` : ''
+    const requirementTitle = autoTitle || formData['requirement_title'] || '未命名需求'
+    console.log('需求标题:', requirementTitle)
 
     setSubmitting(true)
     try {
-      // 1. AI 生成 API 设计文档（如果有详细描述）
       let docUrl = ''
       const description = formData['description'] || ''
+      const isInterfaceIntegration = businessType === '接口对接'
       
-      if (description) {
+      if (isInterfaceIntegration && (description || selectedDocUrls.length > 0)) {
         setGeneratingDoc(true)
         setIsAiGenerating(true)
-        // 重置 AI 状态
         setAiChainItems([])
         
         // 初始思考节点
@@ -78,12 +95,25 @@ export default function NewRequirement() {
           const userToken = localStorage.getItem(USER_TOKEN_KEY) || ''
           const openId = localStorage.getItem(USER_OPEN_ID_KEY) || ''
           
+          let aiMessage = `请根据以下需求描述生成 API 设计文档：\n\n需求标题：${requirementTitle}`
+          if (deadlineStr) {
+            aiMessage += `\n\n截止时间：${targetDate.format('YYYY-MM-DD')}`
+          }
+          
+          if (description) {
+            aiMessage += `\n\n详细描述：${description}`
+          }
+          
+          if (selectedDocUrls.length > 0) {
+            aiMessage += `\n\n## 重要：用户提供了飞书文档参考\n请先调用 extractContentFromUrls 工具读取以下文档内容，然后基于文档内容生成 API 设计：\n${selectedDocUrls.join('\n')}`
+          }
+          
           // 调用 SSE AI 生成文档
           const aiRes = await fetch(`${API_BASE}/api/ai/chat/stream`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-              message: `请根据以下需求描述生成 API 设计文档：\n\n需求标题：${requirementTitle}\n\n详细描述：${description}`,
+              message: aiMessage,
               user_token: userToken,
               open_id: openId
             }),
@@ -172,28 +202,22 @@ export default function NewRequirement() {
       for (const leader of leaders) {
         // 构建消息内容
         let messageContent = `${leader.name}，您好！您收到了一条新的开发需求，请及时查看处理。\n\n`
-        messageContent += `📋 需求标题：${requirementTitle}\n`
-        
-        // 添加截止日期
-        if (formData['target_date']) {
-          const targetDate = new Date(formData['target_date']).toLocaleDateString('zh-CN')
-          messageContent += `📅 截止日期：${targetDate}\n`
+        messageContent += `📋 需求模块：${requirementTitle}\n`
+        if (targetDate) {
+          messageContent += `📅 截止时间：${targetDate.format('YYYY-MM-DD')}\n`
         }
-        
-        // 添加优先级
-        if (formData['priority']) {
-          messageContent += `🔥 优先级：${formData['priority']}\n`
-        }
-        
-        // 添加分类
-        if (formData['category']) {
-          const categoryMap: Record<string, string> = {
-            feature: '功能需求',
-            bug: 'Bug修复',
-            optimization: '优化改进',
-            other: '其他'
+        if (priority) {
+          const priorityDesc: Record<string, string> = {
+            'P0': '紧急阻断',
+            'P1': '高优',
+            'P2': '常规需求',
+            'P3': '低优'
           }
-          messageContent += `📂 分类：${categoryMap[formData['category']] || formData['category']}\n`
+          messageContent += `🔥 优先级：${priority} ${priorityDesc[priority] || ''}\n`
+        }
+        
+        if (businessType) {
+          messageContent += `📂 业务类型：${businessType}\n`
         }
         
         // 如果生成了文档，添加文档链接
@@ -229,6 +253,74 @@ export default function NewRequirement() {
       alert('提交失败，请重试')
     } finally {
       setSubmitting(false)
+    }
+  }
+  
+  const openDocPicker = async () => {
+    const userToken = localStorage.getItem(USER_TOKEN_KEY) || ''
+    if (!userToken) {
+      alert('请先登录飞书账号')
+      return
+    }
+    
+    setDrawerVisible(true)
+    setCurrentFolder('')
+    setFolderHistory([])
+    await fetchFiles(userToken, '')
+  }
+  
+  const fetchFiles = async (_token: string, folderToken: string) => {
+    setLoadingSpaces(true)
+    try {
+      const userToken = localStorage.getItem(USER_TOKEN_KEY) || ''
+      const url = folderToken 
+        ? `${API_BASE}/api/feishu/wiki-spaces?user_token=${encodeURIComponent(userToken)}&folder_token=${encodeURIComponent(folderToken)}`
+        : `${API_BASE}/api/feishu/wiki-spaces?user_token=${encodeURIComponent(userToken)}`
+      const res = await fetch(url)
+      const data = await res.json()
+      if (data.success && data.data?.data?.files) {
+        setWikiSpaces(data.data.data.files)
+      } else if (data.code === 401 || data.error?.includes('expired')) {
+        alert('登录已过期，请重新登录')
+        setDrawerVisible(false)
+      } else {
+        setWikiSpaces([])
+      }
+    } catch (err) {
+      console.error('获取文件失败:', err)
+      setWikiSpaces([])
+    } finally {
+      setLoadingSpaces(false)
+    }
+  }
+  
+  // 进入文件夹
+  const enterFolder = (folder: any) => {
+    setFolderHistory(prev => [...prev, { token: currentFolder, name: currentFolder ? '当前目录' : '根目录' }])
+    setCurrentFolder(folder.token)
+    const userToken = localStorage.getItem(USER_TOKEN_KEY) || ''
+    fetchFiles(userToken, folder.token)
+  }
+  
+  const goBack = () => {
+    const history = [...folderHistory]
+    const prev = history.pop()
+    setFolderHistory(history)
+    setCurrentFolder(prev?.token || '')
+    const userToken = localStorage.getItem(USER_TOKEN_KEY) || ''
+    fetchFiles(userToken, prev?.token || '')
+  }
+  
+  const toggleSelectDocument = (file: any) => {
+    if (file.url) {
+      const docUrl = file.url.replace('lanshanteam.feishu.cn', 'feishu.cn')
+      setSelectedDocUrls(prev => {
+        if (prev.includes(docUrl)) {
+          return prev.filter(url => url !== docUrl)
+        } else {
+          return [...prev, docUrl]
+        }
+      })
     }
   }
 
@@ -430,33 +522,63 @@ export default function NewRequirement() {
         <div className="mb-8">
           <Card className="!rounded-xl !shadow-sm !p-6" bordered={false}>
           <Form form={form} layout="vertical">
+            {/* 需求元数据 */}
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              <Form.Item label={<span className="text-xs font-semibold text-on-surface-variant tracking-wider">优先级</span>} name="priority" className="mb-0" rules={[{ required: true, message: '请选择优先级' }]}>
+                <Select placeholder="优先级" className="!rounded-lg" size="small">
+                  <Select.Option value="P0">P0</Select.Option>
+                  <Select.Option value="P1">P1</Select.Option>
+                  <Select.Option value="P2">P2</Select.Option>
+                  <Select.Option value="P3">P3</Select.Option>
+                </Select>
+              </Form.Item>
+              <Form.Item label={<span className="text-xs font-semibold text-on-surface-variant tracking-wider">业务需求</span>} name="business_type" className="mb-0" rules={[{ required: true, message: '请选择业务需求' }]}>
+                <Select placeholder="业务类型" className="!rounded-lg" size="small">
+                  <Select.Option value="新功能开发">新功能</Select.Option>
+                  <Select.Option value="迭代优化">迭代优化</Select.Option>
+                  <Select.Option value="BUG修复">BUG修复</Select.Option>
+                  <Select.Option value="性能优化">性能优化</Select.Option>
+                  <Select.Option value="兼容性适配">兼容性</Select.Option>
+                  <Select.Option value="数据相关">数据相关</Select.Option>
+                  <Select.Option value="接口对接">接口对接</Select.Option>
+                </Select>
+              </Form.Item>
+              <Form.Item label={<span className="text-xs font-semibold text-on-surface-variant tracking-wider">截止时间</span>} name="target_date" className="mb-0" rules={[{ required: true, message: '请选择截止时间' }]}>
+                <DatePicker className="w-full !rounded-lg" placeholder="截止日期" size="small" />
+              </Form.Item>
+            </div>
+
             <Form.Item label={<span className="text-xs font-semibold text-on-surface-variant tracking-wider">需求标题</span>} name="requirement_title">
-              <Input placeholder="例如：实时数据分析模块" className="!rounded-lg" />
+              <Input placeholder="选填，例如：实时数据分析模块" className="!rounded-lg" />
             </Form.Item>
             <Form.Item label={<span className="text-xs font-semibold text-on-surface-variant tracking-wider">详细描述</span>} name="description">
               <Input.TextArea
-                placeholder="描述核心目标、功能边界和关键约束...\n可以粘贴飞书文档链接，AI将自动读取文档内容"
+                placeholder="描述核心目标、功能边界和关键约束"
                 rows={8}
                 className="!rounded-lg"
               />
             </Form.Item>
 
-            {/* 需求元数据 */}
-            <div className="grid grid-cols-2 gap-4 mb-4">
-              <Form.Item label={<span className="text-xs font-semibold text-on-surface-variant tracking-wider">优先级</span>} name="priority" className="mb-0">
-                <Radio.Group defaultValue="p0" buttonStyle="solid">
-                  <Radio.Button value="p0" className="!rounded-l-lg">P0</Radio.Button>
-                  <Radio.Button value="p1" className="!rounded-none">P1</Radio.Button>
-                  <Radio.Button value="p2" className="!rounded-r-lg">P2</Radio.Button>
-                </Radio.Group>
-              </Form.Item>
+            {/* 选取飞书文档按钮 */}
+            <div className="mb-4">
+              <Button onClick={openDocPicker} className="!rounded-lg">
+                📄 选取飞书文档
+              </Button>
+              {selectedDocUrls.length > 0 && (
+                <div className="mt-2">
+                  <div className="text-sm text-green-600">已选择 {selectedDocUrls.length} 个文档</div>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {selectedDocUrls.map((url, idx) => (
+                      <Tag key={idx} closable onClose={() => setSelectedDocUrls(prev => prev.filter(u => u !== url))}>
+                        {url.split('/').pop()?.substring(0, 20)}...
+                      </Tag>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="grid grid-cols-2 gap-4 mb-4">
-              <Form.Item label={<span className="text-xs font-semibold text-on-surface-variant tracking-wider">目标日期</span>} name="target_date" className="mb-0">
-                <DatePicker className="w-full !rounded-lg" />
-              </Form.Item>
-              <Form.Item label={<span className="text-xs font-semibold text-on-surface-variant tracking-wider">团队</span>} className="mb-0">
+            <Form.Item label={<span className="text-xs font-semibold text-on-surface-variant tracking-wider">团队</span>} className="mb-0">
                 <Select
                   mode="multiple"
                   placeholder="选择团队（可多选）"
@@ -469,7 +591,6 @@ export default function NewRequirement() {
                   allowClear
                 />
               </Form.Item>
-            </div>
 
             <Form.Item label={<span className="text-xs font-semibold text-on-surface-variant tracking-wider">团队Leader</span>} className="mb-4">
               <div className="min-h-[32px] p-2 bg-white rounded border border-gray-200">
@@ -489,31 +610,6 @@ export default function NewRequirement() {
               </div>
               <div className="text-xs text-gray-400 mt-1">选择团队后自动通知负责人</div>
             </Form.Item>
-
-            {/* 检查清单 */}
-            <div className="mb-4">
-              <div className="flex items-center gap-2 text-sm font-semibold text-on-surface mb-3">
-                <span className="material-symbols-outlined text-primary text-base">checklist</span>
-                <span>检查清单</span>
-              </div>
-              <div className="space-y-2">
-                {['已定义用例', '已设置成功标准', '已列出依赖项', '已通知相关方'].map((item) => (
-                  <label key={item} className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" className="w-4 h-4 rounded border-outline text-primary" />
-                    <span className="text-sm text-on-surface">{item}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <Space>
-              <Button icon={<span className="material-symbols-outlined text-sm">attach_file</span>} className="!rounded-lg">
-                添加附件
-              </Button>
-              <Button icon={<span className="material-symbols-outlined text-sm">link</span>} className="!rounded-lg">
-                关联资产
-              </Button>
-            </Space>
           </Form>
         </Card>
         </div>
@@ -556,6 +652,75 @@ export default function NewRequirement() {
         >
           {generatingDoc ? 'AI 生成文档...' : submitting ? '通知中...' : '提交需求'}
         </Button>
+
+        {/* 飞书文档选择抽屉 */}
+        <Drawer
+          title="选择飞书文档"
+          placement="right"
+          width={500}
+          onClose={() => setDrawerVisible(false)}
+          open={drawerVisible}
+          footer={
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-500">已选择 {selectedDocUrls.length} 个文件</span>
+              <Space>
+                <Button onClick={() => setDrawerVisible(false)}>取消</Button>
+                <Button type="primary" onClick={() => setDrawerVisible(false)}>确认 ({selectedDocUrls.length})</Button>
+              </Space>
+            </div>
+          }
+        >
+          {currentFolder !== '' && (
+            <Button 
+              icon={<span className="material-symbols-outlined text-sm">arrow_back</span>}
+              onClick={goBack}
+              className="mb-3 !rounded-lg"
+            >
+              返回上级
+            </Button>
+          )}
+          {loadingSpaces ? (
+            <div className="flex justify-center items-center py-10">
+              <Spin />
+            </div>
+          ) : wikiSpaces.length === 0 ? (
+            <div className="text-center text-gray-500 py-10">暂无可用文档</div>
+          ) : (
+            <List
+              dataSource={wikiSpaces}
+              renderItem={(file: any) => {
+                const docUrl = file.url?.replace('lanshanteam.feishu.cn', 'feishu.cn')
+                const isSelected = docUrl && selectedDocUrls.includes(docUrl)
+                return (
+                <List.Item 
+                  onClick={() => file.type === 'folder' ? enterFolder(file) : toggleSelectDocument(file)}
+                  className={`cursor-pointer hover:bg-gray-50 px-2 py-3 rounded-lg ${isSelected ? 'bg-blue-50' : ''}`}
+                  style={isSelected ? { borderLeft: '3px solid #1890ff' } : {}}
+                >
+                  <List.Item.Meta
+                    avatar={
+                      <span className="material-symbols-outlined" style={{ color: isSelected ? '#1890ff' : '#9ca3af' }}>
+                        {file.type === 'folder' ? 'folder' : 'description'}
+                      </span>
+                    }
+                    title={
+                      <span style={{ color: isSelected ? '#1890ff' : 'inherit' }}>
+                        {file.name || '未命名文件'}
+                        {isSelected && <span className="ml-2 text-xs">✓</span>}
+                      </span>
+                    }
+                    description={
+                      <span className="text-xs text-gray-400">
+                        {file.type === 'folder' ? '文件夹' : file.mime_type || '文件'}
+                      </span>
+                    }
+                  />
+                </List.Item>
+                )
+              }}
+            />
+          )}
+        </Drawer>
       </main>
     </div>
   )

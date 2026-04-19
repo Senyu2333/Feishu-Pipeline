@@ -558,6 +558,10 @@ export async function runAIChatStream(
   sendToClient: (event: string, data: any) => void
   finish: () => void
 }> {
+  // 创建动态 OpenAI 客户端
+  const apiKey = process.env.OPENAI_API_KEY
+  const client = new OpenAI({ apiKey, baseURL: "https://api.deepseek.com" })
+  
   // 流式回调由调用方提供
   const callbacks: Array<{ event: string; data: any }> = []
   let finished = false
@@ -585,12 +589,12 @@ export async function runAIChatStream(
 3. **创建飞书文档并写入内容（必须调用工具，禁止直接输出文本）**
 
 ## 强制规则
-**⚠️ 重要：你必须调用工具完成工作，禁止直接输出文本内容！**
+**重要：你必须调用工具完成工作，禁止直接输出文本内容！**
 - 不要直接输出 API 设计文档的文字
 - 不要直接输出代码
 - **必须**先调用 createFeishuDocument 创建文档
 - **必须**再调用 createFeishuDocumentBlocks 写入内容
-- **⛔ 严格禁止：禁止调用任何发送消息的工具！**
+- **严格禁止：禁止调用任何发送消息的工具！**
 
 ## 可用工具
 
@@ -642,7 +646,7 @@ export async function runAIChatStream(
 
       sendToClient('thinking', { content: '开始分析需求...' })
 
-      const response = await openai.chat.completions.create({
+      const response = await client.chat.completions.create({
         model: 'deepseek-chat',
         messages,
         tools: documentTools as any,
@@ -706,7 +710,7 @@ export async function runAIChatStream(
         // 递归继续对话
         sendToClient('thinking', { content: '继续生成回复...' })
 
-        const finalResponse = await openai.chat.completions.create({
+        const finalResponse = await client.chat.completions.create({
           model: 'deepseek-chat',
           messages,
           tools: documentTools as any,
@@ -737,7 +741,11 @@ const openai = new OpenAI({
 })
 
 export async function runAIChat(userMessage: string, messages: any[] = [], isFirstCall: boolean = true, userToken?: string, openId?: string) {
-    // 注意：API Key 在 openai 初始化时已配置硬编码 fallback
+    const apiKey = process.env.OPENAI_API_KEY
+    const client = new OpenAI({
+        apiKey: apiKey,
+        baseURL: "https://api.deepseek.com"
+    })
     try {
         // 构建消息历史
         const allMessages: any[] = [
@@ -750,12 +758,12 @@ export async function runAIChat(userMessage: string, messages: any[] = [], isFir
 3. **创建飞书文档并写入内容（必须调用工具，禁止直接输出文本）**
 
 ## 强制规则
-**⚠️ 重要：你必须调用工具完成工作，禁止直接输出文本内容！**
+**重要：你必须调用工具完成工作，禁止直接输出文本内容！**
 - 不要直接输出 API 设计文档的文字
 - 不要直接输出代码
 - **必须**先调用 createFeishuDocument 创建文档
 - **必须**再调用 createFeishuDocumentBlocks 写入内容
-- **⛔ 严格禁止：禁止调用任何发送消息的工具！**
+- **严格禁止：禁止调用任何发送消息的工具！**
 
 ## 可用工具
 
@@ -806,7 +814,7 @@ export async function runAIChat(userMessage: string, messages: any[] = [], isFir
             allMessages.push(...messages)
         }
         
-        const response=await openai.chat.completions.create({
+        const response=await client.chat.completions.create({
             model:"deepseek-chat",
             messages: allMessages,
             tools: documentTools as any,
@@ -878,7 +886,7 @@ export async function runAIChat(userMessage: string, messages: any[] = [], isFir
                 // 添加 tool 角色的消息
                 messages.push({role:"tool",tool_call_id:toolCall.id,content:result})
             } catch (toolErr: any) {
-                // 工具调用失败，返回错误信息
+                // 工具调用失败
                 const errorMsg = `工具调用失败: ${toolErr.message}`
                 console.error(`[AI Tool] Error:`, errorMsg)
                 messages.push({role:"tool",tool_call_id:toolCall.id,content:JSON.stringify({error: errorMsg})})

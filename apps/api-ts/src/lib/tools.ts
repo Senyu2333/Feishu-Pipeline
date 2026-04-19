@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { importOpenApiFromUrl, importOpenApiFromSpec, ApifoxImportOptions } from './apifox.js'
 
 type ToolFunctionParams = {
   user_token?: string
@@ -19,6 +20,16 @@ type ToolFunctionParams = {
   fetch_child?: boolean
   user_id_type?: string
   department_id_type?: string
+  // Apifox 参数
+  project_id?: string
+  openapi_url?: string
+  openapi_spec?: Record<string, unknown>
+  target_endpoint_folder_id?: number
+  target_schema_folder_id?: number
+  endpoint_overwrite_behavior?: 'OVERWRITE_EXISTING' | 'AUTO_MERGE' | 'KEEP_EXISTING' | 'CREATE_NEW'
+  schema_overwrite_behavior?: 'OVERWRITE_EXISTING' | 'AUTO_MERGE' | 'KEEP_EXISTING' | 'CREATE_NEW'
+  update_folder_of_changed_endpoint?: boolean
+  prepend_base_path?: boolean
 }
 
 type ToolParams = ToolFunctionParams
@@ -368,6 +379,9 @@ export const toolFunctions: Record<string, (params: any) => Promise<ToolResult>>
   updateBlock,
   batchUpdateBlocks,
   deleteBlock,
+  // Apifox 工具
+  importOpenApiFromUrl: importOpenApiFromUrlTool,
+  importOpenApiFromSpec: importOpenApiFromSpecTool,
 }
 
 
@@ -503,6 +517,172 @@ const blockTools = [
   },
 ]
 
-const allTools = [...tools, ...blockTools]
+// ── Apifox 工具函数 ──────────────────────────────────────────────────
+
+export async function importOpenApiFromUrlTool(params: ToolParams): Promise<ToolResult> {
+  try {
+    const {
+      project_id,
+      openapi_url,
+      target_endpoint_folder_id,
+      target_schema_folder_id,
+      endpoint_overwrite_behavior,
+      schema_overwrite_behavior,
+      update_folder_of_changed_endpoint,
+      prepend_base_path,
+    } = params
+
+    if (!project_id) {
+      return { success: false, error: 'project_id is required' }
+    }
+
+    if (!openapi_url) {
+      return { success: false, error: 'openapi_url is required' }
+    }
+
+    const options: ApifoxImportOptions = {
+      targetEndpointFolderId: target_endpoint_folder_id,
+      targetSchemaFolderId: target_schema_folder_id,
+      endpointOverwriteBehavior: endpoint_overwrite_behavior as any,
+      schemaOverwriteBehavior: schema_overwrite_behavior as any,
+      updateFolderOfChangedEndpoint: update_folder_of_changed_endpoint,
+      prependBasePath: prepend_base_path,
+    }
+
+    const result = await importOpenApiFromUrl(project_id, openapi_url, options)
+
+    if (result.success) {
+      const counters = result.data?.counters
+      return {
+        success: true,
+        data: {
+          message: `导入成功：创建 ${counters?.endpointCreated || 0} 个接口，更新 ${counters?.endpointUpdated || 0} 个接口`,
+          counters,
+        },
+      }
+    } else {
+      return { success: false, error: result.error }
+    }
+  } catch (err) {
+    const error = err as { message?: string; response?: { data?: unknown } }
+    return { success: false, error: error.message, data: error.response?.data }
+  }
+}
+
+export async function importOpenApiFromSpecTool(params: ToolParams): Promise<ToolResult> {
+  try {
+    const {
+      project_id,
+      openapi_spec,
+      target_endpoint_folder_id,
+      target_schema_folder_id,
+      endpoint_overwrite_behavior,
+      schema_overwrite_behavior,
+      update_folder_of_changed_endpoint,
+      prepend_base_path,
+    } = params
+
+    if (!project_id) {
+      return { success: false, error: 'project_id is required' }
+    }
+
+    if (!openapi_spec || typeof openapi_spec !== 'object') {
+      return { success: false, error: 'openapi_spec is required and must be an object (OpenAPI 规范 JSON)' }
+    }
+
+    const options: ApifoxImportOptions = {
+      targetEndpointFolderId: target_endpoint_folder_id,
+      targetSchemaFolderId: target_schema_folder_id,
+      endpointOverwriteBehavior: endpoint_overwrite_behavior as any,
+      schemaOverwriteBehavior: schema_overwrite_behavior as any,
+      updateFolderOfChangedEndpoint: update_folder_of_changed_endpoint,
+      prependBasePath: prepend_base_path,
+    }
+
+    const result = await importOpenApiFromSpec(project_id, openapi_spec, options)
+
+    if (result.success) {
+      const counters = result.data?.counters
+      return {
+        success: true,
+        data: {
+          message: `导入成功：创建 ${counters?.endpointCreated || 0} 个接口，更新 ${counters?.endpointUpdated || 0} 个接口`,
+          counters,
+        },
+      }
+    } else {
+      return { success: false, error: result.error }
+    }
+  } catch (err) {
+    const error = err as { message?: string; response?: { data?: unknown } }
+    return { success: false, error: error.message, data: error.response?.data }
+  }
+}
+
+const apifoxTools = [
+  {
+    type: "function",
+    function: {
+      name: "importOpenApiFromUrl",
+      description: "从 URL 导入 OpenAPI/Swagger 规范到 Apifox 项目。当需要从远程 URL（如 Swagger Hub、GitHub 等）获取 OpenAPI 规范时使用此工具。",
+      parameters: {
+        type: "object",
+        properties: {
+          project_id: { type: "string", description: "Apifox 项目 ID" },
+          openapi_url: { type: "string", description: "OpenAPI/Swagger 规范文件的 URL" },
+          target_endpoint_folder_id: { type: "number", description: "目标接口文件夹 ID（可选）" },
+          target_schema_folder_id: { type: "number", description: "目标 Schema 文件夹 ID（可选）" },
+          endpoint_overwrite_behavior: {
+            type: "string",
+            enum: ["OVERWRITE_EXISTING", "AUTO_MERGE", "KEEP_EXISTING", "CREATE_NEW"],
+            description: "接口覆盖行为: OVERWRITE_EXISTING(覆盖现有)、AUTO_MERGE(自动合并)、KEEP_EXISTING(保留现有)、CREATE_NEW(创建新)"
+          },
+          schema_overwrite_behavior: {
+            type: "string",
+            enum: ["OVERWRITE_EXISTING", "AUTO_MERGE", "KEEP_EXISTING", "CREATE_NEW"],
+            description: "Schema 覆盖行为"
+          },
+          update_folder_of_changed_endpoint: { type: "boolean", description: "是否更新变更接口的文件夹，默认 true" },
+          prepend_base_path: { type: "boolean", description: "是否在路径前追加 basePath，默认 false" },
+        },
+        required: ["project_id", "openapi_url"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "importOpenApiFromSpec",
+      description: "从 OpenAPI JSON 规范对象导入到 Apifox 项目。当已经生成了 OpenAPI 规范 JSON 对象时使用此工具。",
+      parameters: {
+        type: "object",
+        properties: {
+          project_id: { type: "string", description: "Apifox 项目 ID" },
+          openapi_spec: {
+            type: "object",
+            description: "OpenAPI 3.0 规范对象（完整的 OpenAPI JSON 对象，包含 openapi、info、paths、components 等字段）"
+          },
+          target_endpoint_folder_id: { type: "number", description: "目标接口文件夹 ID（可选）" },
+          target_schema_folder_id: { type: "number", description: "目标 Schema 文件夹 ID（可选）" },
+          endpoint_overwrite_behavior: {
+            type: "string",
+            enum: ["deleteUnmatchedResources", "ignoreUnmatchedResources", "coverUnmatchedResources"],
+            description: "接口覆盖行为"
+          },
+          schema_overwrite_behavior: {
+            type: "string",
+            enum: ["KEEP_EXISTING", "COVER_EXISTING"],
+            description: "Schema 覆盖行为"
+          },
+          update_folder_of_changed_endpoint: { type: "boolean", description: "是否更新变更接口的文件夹，默认 true" },
+          prepend_base_path: { type: "boolean", description: "是否在路径前追加 basePath，默认 false" },
+        },
+        required: ["project_id", "openapi_spec"],
+      },
+    },
+  },
+]
+
+const allTools = [...tools, ...blockTools, ...apifoxTools]
 
 export default allTools

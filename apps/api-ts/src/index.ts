@@ -78,7 +78,9 @@ app.get("/api/feishu/oauth-url", async (_request: FastifyRequest, reply: Fastify
       'docx:document:create',
       'docx:document',
       'docx:document:readonly',
+      'drive:drive',
       'drive:drive:readonly',
+      'space:document:retrieve',
       'contact:contact.base:readonly',
       'contact:department.base:readonly',
       'contact:department.organize:readonly',
@@ -263,6 +265,34 @@ app.get("/api/feishu/document-content", async (request: FastifyRequest, reply: F
   }
 })
 
+app.get("/api/feishu/wiki-spaces", async (request: FastifyRequest, reply: FastifyReply) => {
+  try {
+    const { user_token, folder_token } = request.query as any
+    if (!user_token) {
+      return reply.status(400).send({ success: false, error: 'user_token is required' })
+    }
+    const result = await axios.get(
+      'https://open.feishu.cn/open-apis/drive/v1/files',
+      {
+        headers: { Authorization: `Bearer ${user_token}` },
+        params: { 
+          page_size: 50,
+          folder_token: folder_token || undefined,
+        },
+      }
+    )
+    return reply.send({ success: true, data: result.data })
+  } catch (err: any) {
+    const errorCode = err.response?.status || 500
+    const errorMsg = err.response?.data?.msg || err.message
+    return reply.status(errorCode).send({ 
+      success: false, 
+      error: errorMsg,
+      code: errorCode
+    })
+  }
+})
+
 // AI Function Calling
 app.post("/api/ai/get-document-content", async (request: FastifyRequest, reply: FastifyReply) => {
   try {
@@ -308,6 +338,9 @@ app.post("/api/ai/chat", async (request: FastifyRequest, reply: FastifyReply) =>
 app.post("/api/ai/chat/stream", async (request: FastifyRequest, reply: FastifyReply) => {
   try {
     const { message, document_content, user_token, open_id } = request.body as any
+    
+    console.log('[AI Chat Stream] Received request:', { message: message?.substring(0, 100), user_token: user_token?.substring(0, 20) })
+    console.log('[AI Chat Stream] OPENAI_API_KEY:', process.env.OPENAI_API_KEY?.substring(0, 10) + '...')
     
     if (!message) {
       return reply.status(400).send({ error: 'message is required' })

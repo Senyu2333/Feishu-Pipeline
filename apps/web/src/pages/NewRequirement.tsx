@@ -1,4 +1,4 @@
-import { Card, Form, Input, Select, Radio, DatePicker, Button, Space, Tag, Timeline } from 'antd'
+import { Card, Form, Input, Select, Radio, DatePicker, Button, Space, Tag, Timeline, Drawer, List, Spin } from 'antd'
 import { useState, useEffect } from 'react'
 import Sidebar from '../components/Sidebar'
 
@@ -37,6 +37,12 @@ export default function NewRequirement() {
   // AI 生成状态
   const [aiChainItems, setAiChainItems] = useState<AiChainItem[]>([])
   const [isAiGenerating, setIsAiGenerating] = useState(false)
+  const [selectedDocUrls, setSelectedDocUrls] = useState<string[]>([])
+  const [wikiSpaces, setWikiSpaces] = useState<any[]>([])
+  const [drawerVisible, setDrawerVisible] = useState(false)
+  const [loadingSpaces, setLoadingSpaces] = useState(false)
+  const [currentFolder, setCurrentFolder] = useState<string>('')
+  const [folderHistory, setFolderHistory] = useState<{token: string, name: string}[]>([])
   
   const sidebarWidth = 80
   
@@ -56,11 +62,15 @@ export default function NewRequirement() {
 
     setSubmitting(true)
     try {
-      // 1. AI 生成 API 设计文档（如果有详细描述）
+      // 1. AI 生成 API 设计文档（如果有详细描述或有飞书文档）
       let docUrl = ''
       const description = formData['description'] || ''
       
-      if (description) {
+      if (description || selectedDocUrls.length > 0) {
+        console.log('[DEBUG] 进入 AI 处理分支')
+        console.log('[DEBUG] description:', description)
+        console.log('[DEBUG] selectedDocUrls:', selectedDocUrls)
+        console.log('[DEBUG] selectedDocUrls.length:', selectedDocUrls.length)
         setGeneratingDoc(true)
         setIsAiGenerating(true)
         // 重置 AI 状态
@@ -78,12 +88,22 @@ export default function NewRequirement() {
           const userToken = localStorage.getItem(USER_TOKEN_KEY) || ''
           const openId = localStorage.getItem(USER_OPEN_ID_KEY) || ''
           
+          let aiMessage = `请根据以下需求描述生成 API 设计文档：\n\n需求标题：${requirementTitle}`
+          
+          if (description) {
+            aiMessage += `\n\n详细描述：${description}`
+          }
+          
+          if (selectedDocUrls.length > 0) {
+            aiMessage += `\n\n## 重要：用户提供了飞书文档参考\n请先调用 extractContentFromUrls 工具读取以下文档内容，然后基于文档内容生成 API 设计：\n${selectedDocUrls.join('\n')}`
+          }
+          
           // 调用 SSE AI 生成文档
           const aiRes = await fetch(`${API_BASE}/api/ai/chat/stream`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-              message: `请根据以下需求描述生成 API 设计文档：\n\n需求标题：${requirementTitle}\n\n详细描述：${description}`,
+              message: aiMessage,
               user_token: userToken,
               open_id: openId
             }),
@@ -229,6 +249,77 @@ export default function NewRequirement() {
       alert('提交失败，请重试')
     } finally {
       setSubmitting(false)
+    }
+  }
+  
+  const openDocPicker = async () => {
+    const userToken = localStorage.getItem(USER_TOKEN_KEY) || ''
+    if (!userToken) {
+      alert('请先登录飞书账号')
+      return
+    }
+    
+    setDrawerVisible(true)
+    setCurrentFolder('')
+    setFolderHistory([])
+    await fetchFiles(userToken, '')
+  }
+  
+  const fetchFiles = async (_token: string, folderToken: string) => {
+    setLoadingSpaces(true)
+    try {
+      const userToken = localStorage.getItem(USER_TOKEN_KEY) || ''
+      const url = folderToken 
+        ? `${API_BASE}/api/feishu/wiki-spaces?user_token=${encodeURIComponent(userToken)}&folder_token=${encodeURIComponent(folderToken)}`
+        : `${API_BASE}/api/feishu/wiki-spaces?user_token=${encodeURIComponent(userToken)}`
+      const res = await fetch(url)
+      const data = await res.json()
+      if (data.success && data.data?.data?.files) {
+        setWikiSpaces(data.data.data.files)
+      } else if (data.code === 401 || data.error?.includes('expired')) {
+        alert('登录已过期，请重新登录')
+        setDrawerVisible(false)
+      } else {
+        setWikiSpaces([])
+      }
+    } catch (err) {
+      console.error('获取文件失败:', err)
+      setWikiSpaces([])
+    } finally {
+      setLoadingSpaces(false)
+    }
+  }
+  
+  // 进入文件夹
+  const enterFolder = (folder: any) => {
+    setFolderHistory(prev => [...prev, { token: currentFolder, name: currentFolder ? '当前目录' : '根目录' }])
+    setCurrentFolder(folder.token)
+    const userToken = localStorage.getItem(USER_TOKEN_KEY) || ''
+    fetchFiles(userToken, folder.token)
+  }
+  
+  const goBack = () => {
+    const history = [...folderHistory]
+    const prev = history.pop()
+    setFolderHistory(history)
+    setCurrentFolder(prev?.token || '')
+    const userToken = localStorage.getItem(USER_TOKEN_KEY) || ''
+    fetchFiles(userToken, prev?.token || '')
+  }
+  
+  const toggleSelectDocument = (file: any) => {
+    console.log('[DEBUG toggleSelectDocument] file:', file)
+    console.log('[DEBUG toggleSelectDocument] file.url:', file?.url)
+    if (file.url) {
+      const docUrl = file.url.replace('lanshanteam.feishu.cn', 'feishu.cn')
+      console.log('[DEBUG toggleSelectDocument] docUrl:', docUrl)
+      setSelectedDocUrls(prev => {
+        if (prev.includes(docUrl)) {
+          return prev.filter(url => url !== docUrl)
+        } else {
+          return [...prev, docUrl]
+        }
+      })
     }
   }
 
@@ -441,6 +532,25 @@ export default function NewRequirement() {
               />
             </Form.Item>
 
+            {/* 选取飞书文档按钮 */}
+            <div className="mb-4">
+              <Button onClick={openDocPicker} className="!rounded-lg">
+                📄 选取飞书文档
+              </Button>
+              {selectedDocUrls.length > 0 && (
+                <div className="mt-2">
+                  <div className="text-sm text-green-600">已选择 {selectedDocUrls.length} 个文档</div>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {selectedDocUrls.map((url, idx) => (
+                      <Tag key={idx} closable onClose={() => setSelectedDocUrls(prev => prev.filter(u => u !== url))}>
+                        {url.split('/').pop()?.substring(0, 20)}...
+                      </Tag>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* 需求元数据 */}
             <div className="grid grid-cols-2 gap-4 mb-4">
               <Form.Item label={<span className="text-xs font-semibold text-on-surface-variant tracking-wider">优先级</span>} name="priority" className="mb-0">
@@ -556,6 +666,75 @@ export default function NewRequirement() {
         >
           {generatingDoc ? 'AI 生成文档...' : submitting ? '通知中...' : '提交需求'}
         </Button>
+
+        {/* 飞书文档选择抽屉 */}
+        <Drawer
+          title="选择飞书文档"
+          placement="right"
+          width={500}
+          onClose={() => setDrawerVisible(false)}
+          open={drawerVisible}
+          footer={
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-500">已选择 {selectedDocUrls.length} 个文件</span>
+              <Space>
+                <Button onClick={() => setDrawerVisible(false)}>取消</Button>
+                <Button type="primary" onClick={() => setDrawerVisible(false)}>确认 ({selectedDocUrls.length})</Button>
+              </Space>
+            </div>
+          }
+        >
+          {currentFolder !== '' && (
+            <Button 
+              icon={<span className="material-symbols-outlined text-sm">arrow_back</span>}
+              onClick={goBack}
+              className="mb-3 !rounded-lg"
+            >
+              返回上级
+            </Button>
+          )}
+          {loadingSpaces ? (
+            <div className="flex justify-center items-center py-10">
+              <Spin />
+            </div>
+          ) : wikiSpaces.length === 0 ? (
+            <div className="text-center text-gray-500 py-10">暂无可用文档</div>
+          ) : (
+            <List
+              dataSource={wikiSpaces}
+              renderItem={(file: any) => {
+                const docUrl = file.url?.replace('lanshanteam.feishu.cn', 'feishu.cn')
+                const isSelected = docUrl && selectedDocUrls.includes(docUrl)
+                return (
+                <List.Item 
+                  onClick={() => file.type === 'folder' ? enterFolder(file) : toggleSelectDocument(file)}
+                  className={`cursor-pointer hover:bg-gray-50 px-2 py-3 rounded-lg ${isSelected ? 'bg-blue-50' : ''}`}
+                  style={isSelected ? { borderLeft: '3px solid #1890ff' } : {}}
+                >
+                  <List.Item.Meta
+                    avatar={
+                      <span className="material-symbols-outlined" style={{ color: isSelected ? '#1890ff' : '#9ca3af' }}>
+                        {file.type === 'folder' ? 'folder' : 'description'}
+                      </span>
+                    }
+                    title={
+                      <span style={{ color: isSelected ? '#1890ff' : 'inherit' }}>
+                        {file.name || '未命名文件'}
+                        {isSelected && <span className="ml-2 text-xs">✓</span>}
+                      </span>
+                    }
+                    description={
+                      <span className="text-xs text-gray-400">
+                        {file.type === 'folder' ? '文件夹' : file.mime_type || '文件'}
+                      </span>
+                    }
+                  />
+                </List.Item>
+                )
+              }}
+            />
+          )}
+        </Drawer>
       </main>
     </div>
   )

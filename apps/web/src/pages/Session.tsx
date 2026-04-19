@@ -113,9 +113,7 @@ export default function Session() {
       let streamDone = false
       while (!streamDone) {
         const { done, value } = await reader.read()
-        console.log('[SSE] read:', { done, valueLength: value?.length })
         if (done) {
-          console.log('[SSE] reader.done, breaking')
           break
         }
 
@@ -124,9 +122,7 @@ export default function Session() {
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue
           const data = line.slice(6).trim()
-          console.log('[SSE] data:', data.slice(0, 50))
           if (data === '[DONE]') {
-            console.log('[SSE] got [DONE], setting streamDone=true')
             streamDone = true
             break
           }
@@ -166,14 +162,8 @@ export default function Session() {
         return { ...prev, messages: prev.messages.filter(m => m.id !== LOADING_MSG_ID && m.id !== STREAMING_MSG_ID) }
       })
     } finally {
-      console.log('[SSE] finally block, setting sending=false')
-      // 立即更新 ref，确保状态一致性
       sendingRef.current = false
-      // 使用 setTimeout 确保状态更新在下一个渲染周期执行
-      setTimeout(() => {
-        console.log('[SSE] setTimeout callback, calling setSending(false)')
-        setSending(false)
-      }, 0)
+      setSending(false)
     }
   }, [sessionId])
 

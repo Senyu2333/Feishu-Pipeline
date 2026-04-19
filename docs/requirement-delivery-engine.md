@@ -242,11 +242,8 @@
 
 - `GET /api/health`
 
-### 8.2 认证
+### 8.2 飞书认证登录
 
-- `GET /api/auth/feishu/login`
-- `GET /api/auth/feishu/callback?code=...&state=...`
-- `GET /api/me`
 
 ### 8.3 会话
 

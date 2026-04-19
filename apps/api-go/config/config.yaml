@@ -19,13 +19,15 @@ feishu:
   app_secret: "aYDUH3soLMlwONsU262qpcziZmjVDwOe"
   redirect_url: "http://localhost:5173/auth/callback"
   open_base_url: "https://open.feishu.cn"
+  oauth_scope: "contact:contact.base:readonly contact:user.department:readonly contact:user.department_path:readonly"
   bot_name: "需求交付机器人"
   receive_id_type: "open_id"
-  doc_folder_token: ""
+  doc_folder_token: "DhAUfEwu9lkWdud17VAc4ycKn9P"
   bitable_name: "需求排期"
   bitable_folder_token: ""
   bitable_app_token: ""
   bitable_table_id: ""
+  bitable_template_token: "A7krw99hJiatrZktgmzcOVmkn6d"
 
 ai:
   provider: "ark"

@@ -1,6 +1,7 @@
 FROM node:20-alpine AS builder
 
 RUN corepack enable
+RUN npm config set registry https://registry.npmmirror.com
 
 WORKDIR /app
 

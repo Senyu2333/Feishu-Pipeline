@@ -7,8 +7,8 @@ import lark from '@larksuiteoapi/node-sdk'
 import axios from 'axios'
 
 // 飞书应用配置
-const FEISHU_APP_ID = process.env.FEISHU_APP_ID ?? 'cli_a954fa893fb85bc6'
-const FEISHU_APP_SECRET = process.env.FEISHU_APP_SECRET ?? 'aYDUH3soLMlwONsU262qpcziZmjVDwOe'
+const FEISHU_APP_ID = process.env.FEISHU_APP_ID ?? ''
+const FEISHU_APP_SECRET = process.env.FEISHU_APP_SECRET ?? ''
 
 // 验证配置
 if (!FEISHU_APP_ID || !FEISHU_APP_SECRET) {

@@ -1,4 +1,4 @@
-FROM golang:1-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 RUN apk add --no-cache gcc musl-dev
 
@@ -15,9 +15,8 @@ ENV TZ=Asia/Shanghai
 
 WORKDIR /app
 COPY --from=builder /app/server .
-COPY config/config.yaml config/config.yaml
 
-RUN mkdir -p data
+RUN mkdir -p data config
 
 EXPOSE 8080
 

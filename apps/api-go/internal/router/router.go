@@ -48,7 +48,20 @@ func New(deps Dependencies) *gin.Engine {
 	adminGroup.POST("/role-owners", deps.AdminController.SaveRoleOwner)
 	adminGroup.POST("/knowledge/sync", deps.AdminController.SyncKnowledge)
 
-	authenticated.POST("/pipeline/create", deps.PipelineController.Create)
+	authenticated.GET("/pipeline-templates", deps.PipelineController.ListTemplates)
+	authenticated.GET("/pipeline-runs", deps.PipelineController.ListRuns)
+	authenticated.POST("/pipeline-runs", deps.PipelineController.CreateRun)
+	authenticated.POST("/pipeline-runs/from-session", deps.PipelineController.CreateRunFromSession)
+	authenticated.GET("/pipeline-runs/:id", deps.PipelineController.GetRun)
+	authenticated.GET("/pipeline-runs/:id/stages", deps.PipelineController.ListStages)
+	authenticated.GET("/pipeline-runs/:id/artifacts", deps.PipelineController.ListArtifacts)
+	authenticated.GET("/pipeline-runs/:id/checkpoints", deps.PipelineController.ListCheckpoints)
+	authenticated.POST("/pipeline-runs/:id/start", deps.PipelineController.StartRun)
+	authenticated.POST("/pipeline-runs/:id/pause", deps.PipelineController.PauseRun)
+	authenticated.POST("/pipeline-runs/:id/resume", deps.PipelineController.ResumeRun)
+	authenticated.POST("/pipeline-runs/:id/terminate", deps.PipelineController.TerminateRun)
+	authenticated.POST("/checkpoints/:checkpointID/approve", deps.PipelineController.ApproveCheckpoint)
+	authenticated.POST("/checkpoints/:checkpointID/reject", deps.PipelineController.RejectCheckpoint)
 
 	return engine
 }

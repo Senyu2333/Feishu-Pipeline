@@ -41,6 +41,10 @@ type RunCheckpointListResponse struct {
 	Checkpoints []CheckpointResponse `json:"checkpoints"`
 }
 
+type RunAgentRunListResponse struct {
+	AgentRuns []AgentRunResponse `json:"agentRuns"`
+}
+
 type RunStatusResponse struct {
 	ID              string                  `json:"id"`
 	Status          model.PipelineRunStatus `json:"status"`
@@ -121,11 +125,78 @@ type CheckpointResponse struct {
 	UpdatedAt      time.Time              `json:"updatedAt"`
 }
 
+type AgentRunResponse struct {
+	ID             string               `json:"id"`
+	PipelineRunID  string               `json:"pipelineRunId"`
+	StageRunID     string               `json:"stageRunId,omitempty"`
+	AgentKey       string               `json:"agentKey"`
+	Provider       string               `json:"provider,omitempty"`
+	Model          string               `json:"model,omitempty"`
+	PromptSnapshot string               `json:"promptSnapshot,omitempty"`
+	InputJSON      string               `json:"inputJson,omitempty"`
+	OutputJSON     string               `json:"outputJson,omitempty"`
+	TokenUsageJSON string               `json:"tokenUsageJson,omitempty"`
+	LatencyMS      int64                `json:"latencyMs"`
+	Status         model.AgentRunStatus `json:"status"`
+	ErrorMessage   string               `json:"errorMessage,omitempty"`
+	CreatedAt      time.Time            `json:"createdAt"`
+	UpdatedAt      time.Time            `json:"updatedAt"`
+}
+
 type PipelineRunDetailResponse struct {
 	Run         PipelineRunResponse  `json:"run"`
 	Stages      []StageRunResponse   `json:"stages"`
 	Artifacts   []ArtifactResponse   `json:"artifacts"`
 	Checkpoints []CheckpointResponse `json:"checkpoints"`
+}
+
+type ErrorEnvelope struct {
+	Error string `json:"error,omitempty"`
+}
+
+type PipelineTemplateListEnvelope struct {
+	Data  []PipelineTemplateResponse `json:"data,omitempty"`
+	Error string                     `json:"error,omitempty"`
+}
+
+type PipelineRunListEnvelope struct {
+	Data  []PipelineRunResponse `json:"data,omitempty"`
+	Error string                `json:"error,omitempty"`
+}
+
+type PipelineRunDetailEnvelope struct {
+	Data  PipelineRunDetailResponse `json:"data,omitempty"`
+	Error string                    `json:"error,omitempty"`
+}
+
+type RunStageListEnvelope struct {
+	Data  RunStageListResponse `json:"data,omitempty"`
+	Error string               `json:"error,omitempty"`
+}
+
+type RunArtifactListEnvelope struct {
+	Data  RunArtifactListResponse `json:"data,omitempty"`
+	Error string                  `json:"error,omitempty"`
+}
+
+type RunCheckpointListEnvelope struct {
+	Data  RunCheckpointListResponse `json:"data,omitempty"`
+	Error string                    `json:"error,omitempty"`
+}
+
+type RunAgentRunListEnvelope struct {
+	Data  RunAgentRunListResponse `json:"data,omitempty"`
+	Error string                  `json:"error,omitempty"`
+}
+
+type RunStatusEnvelope struct {
+	Data  RunStatusResponse `json:"data,omitempty"`
+	Error string            `json:"error,omitempty"`
+}
+
+type CheckpointEnvelope struct {
+	Data  CheckpointResponse `json:"data,omitempty"`
+	Error string             `json:"error,omitempty"`
 }
 
 func NewPipelineTemplateResponse(item model.PipelineTemplate) PipelineTemplateResponse {
@@ -146,4 +217,8 @@ func NewArtifactResponse(item model.Artifact) ArtifactResponse {
 
 func NewCheckpointResponse(item model.Checkpoint) CheckpointResponse {
 	return CheckpointResponse{ID: item.ID, PipelineRunID: item.PipelineRunID, StageRunID: item.StageRunID, CheckpointType: item.CheckpointType, Status: item.Status, ApproverID: item.ApproverID, Decision: item.Decision, Comment: item.Comment, DecidedAt: item.DecidedAt, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+}
+
+func NewAgentRunResponse(item model.AgentRun) AgentRunResponse {
+	return AgentRunResponse{ID: item.ID, PipelineRunID: item.PipelineRunID, StageRunID: item.StageRunID, AgentKey: item.AgentKey, Provider: item.Provider, Model: item.Model, PromptSnapshot: item.PromptSnapshot, InputJSON: item.InputJSON, OutputJSON: item.OutputJSON, TokenUsageJSON: item.TokenUsageJSON, LatencyMS: item.LatencyMS, Status: item.Status, ErrorMessage: item.ErrorMessage, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }

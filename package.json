@@ -11,7 +11,9 @@
     "dev:api-py": "pnpm --filter api-py dev",
     "build": "pnpm --filter web build",
     "preview": "pnpm --filter web preview",
-    "lint": "pnpm -r lint"
+    "lint": "pnpm -r lint",
+    "swagger:gen": "cd apps/api-go && go run github.com/swaggo/swag/cmd/swag@latest init -g main.go -o docs",
+    "apifox:sync": "pnpm swagger:gen && node scripts/sync-apifox.mjs apps/api-go/docs/swagger.json"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

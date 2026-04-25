@@ -56,6 +56,7 @@ func New(deps Dependencies) *gin.Engine {
 	authenticated.GET("/pipeline-runs/:id/stages", deps.PipelineController.ListStages)
 	authenticated.GET("/pipeline-runs/:id/artifacts", deps.PipelineController.ListArtifacts)
 	authenticated.GET("/pipeline-runs/:id/checkpoints", deps.PipelineController.ListCheckpoints)
+	authenticated.GET("/pipeline-runs/:id/agent-runs", deps.PipelineController.ListAgentRuns)
 	authenticated.POST("/pipeline-runs/:id/start", deps.PipelineController.StartRun)
 	authenticated.POST("/pipeline-runs/:id/pause", deps.PipelineController.PauseRun)
 	authenticated.POST("/pipeline-runs/:id/resume", deps.PipelineController.ResumeRun)

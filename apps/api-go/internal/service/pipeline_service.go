@@ -6,14 +6,21 @@ import (
 	"strings"
 	"time"
 
+	"feishu-pipeline/apps/api-go/internal/job"
 	"feishu-pipeline/apps/api-go/internal/model"
 	"feishu-pipeline/apps/api-go/internal/pipeline"
 	"feishu-pipeline/apps/api-go/internal/repo"
 	"feishu-pipeline/apps/api-go/internal/utils"
 )
 
+type PipelineQueue interface {
+	EnqueuePipelineRun(job.PipelineRunJob)
+}
+
 type PipelineService struct {
 	repository *repo.Repository
+	engine     *pipeline.Engine
+	queue      PipelineQueue
 }
 
 type PipelineRunDetail struct {
@@ -34,7 +41,14 @@ type CreatePipelineRunInput struct {
 }
 
 func NewPipelineService(repository *repo.Repository) *PipelineService {
-	return &PipelineService{repository: repository}
+	return &PipelineService{
+		repository: repository,
+		engine:     pipeline.NewEngine(repository, pipeline.NewSequentialExecutor()),
+	}
+}
+
+func (s *PipelineService) SetQueue(queue PipelineQueue) {
+	s.queue = queue
 }
 
 func (s *PipelineService) ListPipelineTemplates(ctx context.Context) ([]model.PipelineTemplate, error) {
@@ -70,8 +84,16 @@ func (s *PipelineService) CreatePipelineRun(ctx context.Context, input CreatePip
 	if templateID == "" {
 		templateID = pipeline.DefaultTemplateID
 	}
-	if _, err := s.repository.GetPipelineTemplateByID(ctx, templateID); err != nil {
+	template, err := s.repository.GetPipelineTemplateByID(ctx, templateID)
+	if err != nil {
 		return nil, err
+	}
+	definition, err := pipeline.ParseTemplateDefinition(template.DefinitionJSON)
+	if err != nil {
+		return nil, err
+	}
+	if len(definition.Stages) == 0 {
+		return nil, fmt.Errorf("pipeline template stages are required")
 	}
 
 	targetRepo := strings.TrimSpace(input.TargetRepo)
@@ -93,7 +115,7 @@ func (s *PipelineService) CreatePipelineRun(ctx context.Context, input CreatePip
 		TargetBranch:    targetBranch,
 		WorkBranch:      fmt.Sprintf("devflow/%s", strings.TrimPrefix(utils.NewID("branch"), "branch_")),
 		Status:          model.PipelineRunDraft,
-		CurrentStageKey: pipeline.DefaultStageDefinitions[0].Key,
+		CurrentStageKey: definition.Stages[0].Key,
 		CreatedBy:       input.CreatedBy,
 		BaseModel:       model.BaseModel{CreatedAt: now, UpdatedAt: now},
 	}
@@ -101,9 +123,9 @@ func (s *PipelineService) CreatePipelineRun(ctx context.Context, input CreatePip
 		return nil, err
 	}
 
-	stageRuns := make([]model.StageRun, 0, len(pipeline.DefaultStageDefinitions))
+	stageRuns := make([]model.StageRun, 0, len(definition.Stages))
 	checkpoints := make([]model.Checkpoint, 0, 2)
-	for idx, stage := range pipeline.DefaultStageDefinitions {
+	for idx, stage := range definition.Stages {
 		status := model.StageRunPending
 		if idx == 0 {
 			status = model.StageRunQueued
@@ -188,31 +210,16 @@ func (s *PipelineService) ListCheckpoints(ctx context.Context, runID string) ([]
 	return s.repository.ListCheckpointsByPipelineRunID(ctx, runID)
 }
 
+func (s *PipelineService) ListAgentRuns(ctx context.Context, runID string) ([]model.AgentRun, error) {
+	return s.repository.ListAgentRunsByPipelineRunID(ctx, runID)
+}
+
 func (s *PipelineService) StartPipelineRun(ctx context.Context, runID string) (model.PipelineRun, error) {
-	if err := s.repository.UpdatePipelineRunStatus(ctx, runID, model.PipelineRunRunning); err != nil {
+	if err := s.repository.UpdatePipelineRunStatus(ctx, runID, model.PipelineRunQueued); err != nil {
 		return model.PipelineRun{}, err
 	}
-	stages, err := s.repository.ListStageRunsByPipelineRunID(ctx, runID)
-	if err != nil {
-		return model.PipelineRun{}, err
-	}
-	if len(stages) > 0 {
-		firstStage := stages[0]
-		if firstStage.StageType == model.StageTypeCheckpoint {
-			if err := s.repository.UpdateStageRunStatus(ctx, firstStage.ID, model.StageRunWaitingApproval); err != nil {
-				return model.PipelineRun{}, err
-			}
-			if err := s.repository.UpdatePipelineRunStatus(ctx, runID, model.PipelineRunWaitingApproval); err != nil {
-				return model.PipelineRun{}, err
-			}
-		} else {
-			if err := s.repository.UpdateStageRunStatus(ctx, firstStage.ID, model.StageRunRunning); err != nil {
-				return model.PipelineRun{}, err
-			}
-		}
-		if err := s.repository.UpdatePipelineRunCurrentStage(ctx, runID, firstStage.StageKey); err != nil {
-			return model.PipelineRun{}, err
-		}
+	if s.queue != nil {
+		s.queue.EnqueuePipelineRun(job.PipelineRunJob{RunID: runID})
 	}
 	return s.repository.GetPipelineRunByID(ctx, runID)
 }
@@ -225,8 +232,11 @@ func (s *PipelineService) PausePipelineRun(ctx context.Context, runID string) (m
 }
 
 func (s *PipelineService) ResumePipelineRun(ctx context.Context, runID string) (model.PipelineRun, error) {
-	if err := s.repository.UpdatePipelineRunStatus(ctx, runID, model.PipelineRunRunning); err != nil {
+	if err := s.repository.UpdatePipelineRunStatus(ctx, runID, model.PipelineRunQueued); err != nil {
 		return model.PipelineRun{}, err
+	}
+	if s.queue != nil {
+		s.queue.EnqueuePipelineRun(job.PipelineRunJob{RunID: runID})
 	}
 	return s.repository.GetPipelineRunByID(ctx, runID)
 }
@@ -246,24 +256,75 @@ func (s *PipelineService) ApproveCheckpoint(ctx context.Context, checkpointID st
 	if err != nil {
 		return model.Checkpoint{}, err
 	}
+	if checkpoint.StageRunID != "" {
+		_ = s.repository.UpdateStageRunStatus(ctx, checkpoint.StageRunID, model.StageRunSucceeded)
+	}
 	if checkpoint.PipelineRunID != "" {
-		_ = s.repository.UpdatePipelineRunStatus(ctx, checkpoint.PipelineRunID, model.PipelineRunRunning)
+		_ = s.repository.UpdatePipelineRunStatus(ctx, checkpoint.PipelineRunID, model.PipelineRunQueued)
+		if s.queue != nil {
+			s.queue.EnqueuePipelineRun(job.PipelineRunJob{RunID: checkpoint.PipelineRunID})
+		}
 	}
 	return checkpoint, nil
 }
 
 func (s *PipelineService) RejectCheckpoint(ctx context.Context, checkpointID string, comment string, approverID string) (model.Checkpoint, error) {
-	if err := s.repository.UpdateCheckpointDecision(ctx, checkpointID, model.CheckpointRejected, "reject", strings.TrimSpace(comment), approverID); err != nil {
+	trimmedComment := strings.TrimSpace(comment)
+	if err := s.repository.UpdateCheckpointDecision(ctx, checkpointID, model.CheckpointRejected, "reject", trimmedComment, approverID); err != nil {
 		return model.Checkpoint{}, err
 	}
 	checkpoint, err := s.repository.GetCheckpointByID(ctx, checkpointID)
 	if err != nil {
 		return model.Checkpoint{}, err
 	}
-	if checkpoint.PipelineRunID != "" {
-		_ = s.repository.UpdatePipelineRunStatus(ctx, checkpoint.PipelineRunID, model.PipelineRunWaitingApproval)
+	if checkpoint.StageRunID == "" || checkpoint.PipelineRunID == "" {
+		return checkpoint, nil
+	}
+
+	checkpointStageRun, err := s.repository.GetStageRunByID(ctx, checkpoint.StageRunID)
+	if err != nil {
+		return model.Checkpoint{}, err
+	}
+	_ = s.repository.ResetStageRun(ctx, checkpointStageRun.ID, model.StageRunPending, checkpointStageRun.Attempt, "")
+
+	prevKey := pipeline.PreviousExecutableStage(checkpointStageRun.StageKey)
+	if prevKey == "" {
+		return checkpoint, nil
+	}
+	prevStage, err := s.repository.GetStageRunByKey(ctx, checkpoint.PipelineRunID, prevKey)
+	if err != nil {
+		return model.Checkpoint{}, err
+	}
+
+	_ = s.repository.MarkArtifactsSupersededByStageRunID(ctx, prevStage.ID)
+	_ = s.repository.ResetStageRun(ctx, prevStage.ID, model.StageRunQueued, prevStage.Attempt+1, pipeline.BuildRejectContext(trimmedComment, prevStage.OutputJSON))
+
+	for _, stageKey := range pipeline.NextStagesForReset(prevKey) {
+		stage, stageErr := s.repository.GetStageRunByKey(ctx, checkpoint.PipelineRunID, stageKey)
+		if stageErr != nil {
+			continue
+		}
+		if stage.StageKey == checkpointStageRun.StageKey {
+			_ = s.repository.ResetStageRun(ctx, stage.ID, model.StageRunPending, stage.Attempt, "")
+			continue
+		}
+		_ = s.repository.ResetStageRun(ctx, stage.ID, model.StageRunPending, stage.Attempt, "")
+		_ = s.repository.MarkArtifactsSupersededByStageRunID(ctx, stage.ID)
+	}
+
+	_ = s.repository.UpdatePipelineRunCurrentStage(ctx, checkpoint.PipelineRunID, prevKey)
+	_ = s.repository.UpdatePipelineRunStatus(ctx, checkpoint.PipelineRunID, model.PipelineRunQueued)
+	if s.queue != nil {
+		s.queue.EnqueuePipelineRun(job.PipelineRunJob{RunID: checkpoint.PipelineRunID})
 	}
 	return checkpoint, nil
+}
+
+func (s *PipelineService) HandlePipelineRun(ctx context.Context, payload job.PipelineRunJob) error {
+	if err := pipeline.RequireRunID(payload.RunID); err != nil {
+		return err
+	}
+	return s.engine.Run(ctx, payload.RunID)
 }
 
 func checkpointTypeForStage(stageKey string) model.CheckpointType {

@@ -558,6 +558,18 @@ func (r *Repository) ListStageRunsByPipelineRunID(ctx context.Context, runID str
 	return items, err
 }
 
+func (r *Repository) GetStageRunByID(ctx context.Context, stageRunID string) (model.StageRun, error) {
+	var item model.StageRun
+	err := r.db.WithContext(ctx).First(&item, "id = ?", stageRunID).Error
+	return item, err
+}
+
+func (r *Repository) GetStageRunByKey(ctx context.Context, runID string, stageKey string) (model.StageRun, error) {
+	var item model.StageRun
+	err := r.db.WithContext(ctx).Where("pipeline_run_id = ? AND stage_key = ?", runID, stageKey).First(&item).Error
+	return item, err
+}
+
 func (r *Repository) UpdateStageRunStatus(ctx context.Context, stageRunID string, status model.StageRunStatus) error {
 	updates := map[string]any{"status": status, "updated_at": time.Now().UTC()}
 	if status == model.StageRunRunning {
@@ -571,6 +583,20 @@ func (r *Repository) UpdateStageRunStatus(ctx context.Context, stageRunID string
 	return r.db.WithContext(ctx).Model(&model.StageRun{}).Where("id = ?", stageRunID).Updates(updates).Error
 }
 
+func (r *Repository) QueueStageRun(ctx context.Context, runID string, stageKey string) error {
+	return r.db.WithContext(ctx).Model(&model.StageRun{}).Where("pipeline_run_id = ? AND stage_key = ?", runID, stageKey).Updates(map[string]any{
+		"status":     model.StageRunQueued,
+		"updated_at": time.Now().UTC(),
+	}).Error
+}
+
+func (r *Repository) SaveStageRunInput(ctx context.Context, stageRunID string, inputJSON string) error {
+	return r.db.WithContext(ctx).Model(&model.StageRun{}).Where("id = ?", stageRunID).Updates(map[string]any{
+		"input_json": inputJSON,
+		"updated_at": time.Now().UTC(),
+	}).Error
+}
+
 func (r *Repository) SaveStageRunOutput(ctx context.Context, stageRunID string, outputJSON string, errorMessage string) error {
 	return r.db.WithContext(ctx).Model(&model.StageRun{}).Where("id = ?", stageRunID).Updates(map[string]any{
 		"output_json":   outputJSON,
@@ -579,8 +605,44 @@ func (r *Repository) SaveStageRunOutput(ctx context.Context, stageRunID string, 
 	}).Error
 }
 
+func (r *Repository) ResetStageRun(ctx context.Context, stageRunID string, status model.StageRunStatus, attempt int, inputJSON string) error {
+	updates := map[string]any{
+		"status":        status,
+		"attempt":       attempt,
+		"input_json":    inputJSON,
+		"output_json":   "",
+		"error_message": "",
+		"started_at":    nil,
+		"finished_at":   nil,
+		"updated_at":    time.Now().UTC(),
+	}
+	return r.db.WithContext(ctx).Model(&model.StageRun{}).Where("id = ?", stageRunID).Updates(updates).Error
+}
+
 func (r *Repository) CreateArtifact(ctx context.Context, item *model.Artifact) error {
+	if item.MetaJSON == "" {
+		item.MetaJSON = "{}"
+	}
 	return r.db.WithContext(ctx).Create(item).Error
+}
+
+func (r *Repository) MarkArtifactsSupersededByStageRunID(ctx context.Context, stageRunID string) error {
+	var items []model.Artifact
+	if err := r.db.WithContext(ctx).Where("stage_run_id = ?", stageRunID).Find(&items).Error; err != nil {
+		return err
+	}
+	for _, item := range items {
+		meta := strings.TrimSpace(item.MetaJSON)
+		if meta == "" || meta == "{}" {
+			meta = `{"superseded":true}`
+		} else if !strings.Contains(meta, `"superseded"`) {
+			meta = strings.TrimSuffix(meta, "}") + `,"superseded":true}`
+		}
+		if err := r.db.WithContext(ctx).Model(&model.Artifact{}).Where("id = ?", item.ID).Updates(map[string]any{"meta_json": meta, "updated_at": time.Now().UTC()}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *Repository) ListArtifactsByPipelineRunID(ctx context.Context, runID string) ([]model.Artifact, error) {
@@ -611,9 +673,56 @@ func (r *Repository) UpdateCheckpointDecision(ctx context.Context, checkpointID 
 	}).Error
 }
 
+func (r *Repository) ResetCheckpoint(ctx context.Context, checkpointID string) error {
+	return r.db.WithContext(ctx).Model(&model.Checkpoint{}).Where("id = ?", checkpointID).Updates(map[string]any{
+		"status":      model.CheckpointPending,
+		"decision":    "",
+		"comment":     "",
+		"approver_id": "",
+		"decided_at":  nil,
+		"updated_at":  time.Now().UTC(),
+	}).Error
+}
+
+func (r *Repository) ResetCheckpointByStageRunID(ctx context.Context, stageRunID string) error {
+	return r.db.WithContext(ctx).Model(&model.Checkpoint{}).Where("stage_run_id = ?", stageRunID).Updates(map[string]any{
+		"status":      model.CheckpointPending,
+		"decision":    "",
+		"comment":     "",
+		"approver_id": "",
+		"decided_at":  nil,
+		"updated_at":  time.Now().UTC(),
+	}).Error
+}
+
 func (r *Repository) ListCheckpointsByPipelineRunID(ctx context.Context, runID string) ([]model.Checkpoint, error) {
 	var items []model.Checkpoint
 	err := r.db.WithContext(ctx).Where("pipeline_run_id = ?", runID).Order("created_at ASC").Find(&items).Error
+	return items, err
+}
+
+func (r *Repository) CreateAgentRun(ctx context.Context, item *model.AgentRun) error {
+	return r.db.WithContext(ctx).Create(item).Error
+}
+
+func (r *Repository) UpdateAgentRunStatus(ctx context.Context, agentRunID string, status model.AgentRunStatus, outputJSON string, errorMessage string) error {
+	return r.db.WithContext(ctx).Model(&model.AgentRun{}).Where("id = ?", agentRunID).Updates(map[string]any{
+		"status":        status,
+		"output_json":   outputJSON,
+		"error_message": errorMessage,
+		"updated_at":    time.Now().UTC(),
+	}).Error
+}
+
+func (r *Repository) ListAgentRunsByPipelineRunID(ctx context.Context, runID string) ([]model.AgentRun, error) {
+	var items []model.AgentRun
+	err := r.db.WithContext(ctx).Where("pipeline_run_id = ?", runID).Order("created_at ASC").Find(&items).Error
+	return items, err
+}
+
+func (r *Repository) ListAgentRunsByStageRunID(ctx context.Context, stageRunID string) ([]model.AgentRun, error) {
+	var items []model.AgentRun
+	err := r.db.WithContext(ctx).Where("stage_run_id = ?", stageRunID).Order("created_at ASC").Find(&items).Error
 	return items, err
 }
 

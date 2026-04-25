@@ -86,8 +86,9 @@ func NewApplication(ctx context.Context, configPath string, version string) (*Ap
 	publishService := service.NewPublishService(repository, authService, agentEngine, feishuClient, pipelineService)
 	sessionService.SetPublisher(publishService)
 
-	runner := job.NewRunner(nil, publishService)
+	runner := job.NewRunner(nil, publishService, pipelineService)
 	publishService.SetQueue(runner)
+	pipelineService.SetQueue(runner)
 	runner.Start(ctx)
 
 	engine := router.New(router.Dependencies{

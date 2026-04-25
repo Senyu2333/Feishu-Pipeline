@@ -1,0 +1,1043 @@
+basePath: /
+definitions:
+  admintype.CreateRoleMappingRequest:
+    properties:
+      departments:
+        items:
+          type: string
+        type: array
+      keyword:
+        type: string
+      name:
+        type: string
+      role:
+        $ref: '#/definitions/model.Role'
+    required:
+    - keyword
+    - name
+    - role
+    type: object
+  admintype.KnowledgeSourceInput:
+    properties:
+      content:
+        type: string
+      title:
+        type: string
+    required:
+    - content
+    - title
+    type: object
+  admintype.SaveRoleOwnerRequest:
+    properties:
+      enabled:
+        type: boolean
+      feishuId:
+        type: string
+      feishuIdType:
+        type: string
+      ownerName:
+        type: string
+      role:
+        $ref: '#/definitions/model.Role'
+    required:
+    - ownerName
+    - role
+    type: object
+  admintype.SyncKnowledgeRequest:
+    properties:
+      sources:
+        items:
+          $ref: '#/definitions/admintype.KnowledgeSourceInput'
+        type: array
+    required:
+    - sources
+    type: object
+  authtype.FeishuSSOLoginRequest:
+    properties:
+      code:
+        type: string
+    required:
+    - code
+    type: object
+  model.ArtifactType:
+    enum:
+    - structured_requirement
+    - solution_design
+    - code_diff
+    - test_report
+    - review_report
+    - delivery_summary
+    type: string
+    x-enum-varnames:
+    - ArtifactStructuredRequirement
+    - ArtifactSolutionDesign
+    - ArtifactCodeDiff
+    - ArtifactTestReport
+    - ArtifactReviewReport
+    - ArtifactDeliverySummary
+  model.CheckpointStatus:
+    enum:
+    - pending
+    - approved
+    - rejected
+    type: string
+    x-enum-varnames:
+    - CheckpointPending
+    - CheckpointApproved
+    - CheckpointRejected
+  model.CheckpointType:
+    enum:
+    - design_review
+    - code_review
+    type: string
+    x-enum-varnames:
+    - CheckpointDesignReview
+    - CheckpointCodeReview
+  model.PipelineRunStatus:
+    enum:
+    - draft
+    - queued
+    - running
+    - waiting_approval
+    - paused
+    - failed
+    - completed
+    - terminated
+    type: string
+    x-enum-varnames:
+    - PipelineRunDraft
+    - PipelineRunQueued
+    - PipelineRunRunning
+    - PipelineRunWaitingApproval
+    - PipelineRunPaused
+    - PipelineRunFailed
+    - PipelineRunCompleted
+    - PipelineRunTerminated
+  model.Role:
+    enum:
+    - product
+    - frontend
+    - backend
+    - other
+    - admin
+    type: string
+    x-enum-varnames:
+    - RoleProduct
+    - RoleFrontend
+    - RoleBackend
+    - RoleOther
+    - RoleAdmin
+  model.StageRunStatus:
+    enum:
+    - pending
+    - queued
+    - running
+    - waiting_approval
+    - succeeded
+    - failed
+    - skipped
+    type: string
+    x-enum-varnames:
+    - StageRunPending
+    - StageRunQueued
+    - StageRunRunning
+    - StageRunWaitingApproval
+    - StageRunSucceeded
+    - StageRunFailed
+    - StageRunSkipped
+  model.StageType:
+    enum:
+    - analysis
+    - design
+    - checkpoint
+    - codegen
+    - test
+    - review
+    - delivery
+    type: string
+    x-enum-varnames:
+    - StageTypeAnalysis
+    - StageTypeDesign
+    - StageTypeCheckpoint
+    - StageTypeCodegen
+    - StageTypeTest
+    - StageTypeReview
+    - StageTypeDelivery
+  model.TaskStatus:
+    enum:
+    - todo
+    - in_progress
+    - testing
+    - done
+    type: string
+    x-enum-varnames:
+    - TaskTodo
+    - TaskInProgress
+    - TaskTesting
+    - TaskDone
+  pipelinetype.ArtifactResponse:
+    properties:
+      artifactType:
+        $ref: '#/definitions/model.ArtifactType'
+      contentJson:
+        type: string
+      contentText:
+        type: string
+      createdAt:
+        type: string
+      filePath:
+        type: string
+      id:
+        type: string
+      metaJson:
+        type: string
+      pipelineRunId:
+        type: string
+      stageRunId:
+        type: string
+      title:
+        type: string
+    type: object
+  pipelinetype.CheckpointEnvelope:
+    properties:
+      data:
+        $ref: '#/definitions/pipelinetype.CheckpointResponse'
+      error:
+        type: string
+    type: object
+  pipelinetype.CheckpointResponse:
+    properties:
+      approverId:
+        type: string
+      checkpointType:
+        $ref: '#/definitions/model.CheckpointType'
+      comment:
+        type: string
+      createdAt:
+        type: string
+      decidedAt:
+        type: string
+      decision:
+        type: string
+      id:
+        type: string
+      pipelineRunId:
+        type: string
+      stageRunId:
+        type: string
+      status:
+        $ref: '#/definitions/model.CheckpointStatus'
+      updatedAt:
+        type: string
+    type: object
+  pipelinetype.CreatePipelineRunFromSessionRequest:
+    properties:
+      sessionId:
+        type: string
+      targetBranch:
+        type: string
+      targetRepo:
+        type: string
+      templateId:
+        type: string
+    required:
+    - sessionId
+    type: object
+  pipelinetype.CreatePipelineRunRequest:
+    properties:
+      requirementText:
+        type: string
+      targetBranch:
+        type: string
+      targetRepo:
+        type: string
+      templateId:
+        type: string
+      title:
+        type: string
+    required:
+    - requirementText
+    - title
+    type: object
+  pipelinetype.ErrorEnvelope:
+    properties:
+      error:
+        type: string
+    type: object
+  pipelinetype.PipelineRunDetailEnvelope:
+    properties:
+      data:
+        $ref: '#/definitions/pipelinetype.PipelineRunDetailResponse'
+      error:
+        type: string
+    type: object
+  pipelinetype.PipelineRunDetailResponse:
+    properties:
+      artifacts:
+        items:
+          $ref: '#/definitions/pipelinetype.ArtifactResponse'
+        type: array
+      checkpoints:
+        items:
+          $ref: '#/definitions/pipelinetype.CheckpointResponse'
+        type: array
+      run:
+        $ref: '#/definitions/pipelinetype.PipelineRunResponse'
+      stages:
+        items:
+          $ref: '#/definitions/pipelinetype.StageRunResponse'
+        type: array
+    type: object
+  pipelinetype.PipelineRunListEnvelope:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/pipelinetype.PipelineRunResponse'
+        type: array
+      error:
+        type: string
+    type: object
+  pipelinetype.PipelineRunResponse:
+    properties:
+      createdAt:
+        type: string
+      createdBy:
+        type: string
+      currentStageKey:
+        type: string
+      finishedAt:
+        type: string
+      id:
+        type: string
+      requirementText:
+        type: string
+      sourceSessionId:
+        type: string
+      startedAt:
+        type: string
+      status:
+        $ref: '#/definitions/model.PipelineRunStatus'
+      targetBranch:
+        type: string
+      targetRepo:
+        type: string
+      templateId:
+        type: string
+      title:
+        type: string
+      updatedAt:
+        type: string
+      workBranch:
+        type: string
+    type: object
+  pipelinetype.PipelineTemplateListEnvelope:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/pipelinetype.PipelineTemplateResponse'
+        type: array
+      error:
+        type: string
+    type: object
+  pipelinetype.PipelineTemplateResponse:
+    properties:
+      createdAt:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      isActive:
+        type: boolean
+      name:
+        type: string
+      updatedAt:
+        type: string
+      version:
+        type: string
+    type: object
+  pipelinetype.RunArtifactListEnvelope:
+    properties:
+      data:
+        $ref: '#/definitions/pipelinetype.RunArtifactListResponse'
+      error:
+        type: string
+    type: object
+  pipelinetype.RunArtifactListResponse:
+    properties:
+      artifacts:
+        items:
+          $ref: '#/definitions/pipelinetype.ArtifactResponse'
+        type: array
+    type: object
+  pipelinetype.RunCheckpointListEnvelope:
+    properties:
+      data:
+        $ref: '#/definitions/pipelinetype.RunCheckpointListResponse'
+      error:
+        type: string
+    type: object
+  pipelinetype.RunCheckpointListResponse:
+    properties:
+      checkpoints:
+        items:
+          $ref: '#/definitions/pipelinetype.CheckpointResponse'
+        type: array
+    type: object
+  pipelinetype.RunStageListEnvelope:
+    properties:
+      data:
+        $ref: '#/definitions/pipelinetype.RunStageListResponse'
+      error:
+        type: string
+    type: object
+  pipelinetype.RunStageListResponse:
+    properties:
+      stages:
+        items:
+          $ref: '#/definitions/pipelinetype.StageRunResponse'
+        type: array
+    type: object
+  pipelinetype.RunStatusEnvelope:
+    properties:
+      data:
+        $ref: '#/definitions/pipelinetype.RunStatusResponse'
+      error:
+        type: string
+    type: object
+  pipelinetype.RunStatusResponse:
+    properties:
+      currentStageKey:
+        type: string
+      finishedAt:
+        type: string
+      id:
+        type: string
+      startedAt:
+        type: string
+      status:
+        $ref: '#/definitions/model.PipelineRunStatus'
+      updatedAt:
+        type: string
+    type: object
+  pipelinetype.StageRunResponse:
+    properties:
+      attempt:
+        type: integer
+      createdAt:
+        type: string
+      errorMessage:
+        type: string
+      finishedAt:
+        type: string
+      id:
+        type: string
+      inputJson:
+        type: string
+      outputJson:
+        type: string
+      pipelineRunId:
+        type: string
+      stageKey:
+        type: string
+      stageType:
+        $ref: '#/definitions/model.StageType'
+      startedAt:
+        type: string
+      status:
+        $ref: '#/definitions/model.StageRunStatus'
+      updatedAt:
+        type: string
+    type: object
+  pipelinetype.UpdateCheckpointDecisionRequest:
+    properties:
+      comment:
+        type: string
+    type: object
+  sessiontype.CreateMessageRequest:
+    properties:
+      content:
+        type: string
+    required:
+    - content
+    type: object
+  sessiontype.CreateSessionRequest:
+    properties:
+      prompt:
+        type: string
+      title:
+        type: string
+    required:
+    - prompt
+    - title
+    type: object
+  tasktype.UpdateTaskStatusRequest:
+    properties:
+      status:
+        $ref: '#/definitions/model.TaskStatus'
+    required:
+    - status
+    type: object
+info:
+  contact: {}
+  description: Feishu Pipeline 后端 API 文档。
+  title: Feishu Pipeline API
+  version: "1.0"
+paths:
+  /api/admin/knowledge/sync:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: json入参
+        in: body
+        name: req
+        required: true
+        schema:
+          $ref: '#/definitions/admintype.SyncKnowledgeRequest'
+      produces:
+      - application/json
+      responses: {}
+      summary: 同步知识库来源
+      tags:
+      - 后台管理
+  /api/admin/role-mappings:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: json入参
+        in: body
+        name: req
+        required: true
+        schema:
+          $ref: '#/definitions/admintype.CreateRoleMappingRequest'
+      produces:
+      - application/json
+      responses: {}
+      summary: 创建或保存角色映射规则
+      tags:
+      - 后台管理
+  /api/admin/role-owners:
+    get:
+      produces:
+      - application/json
+      responses: {}
+      summary: 角色负责人列表
+      tags:
+      - 后台管理
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: json入参
+        in: body
+        name: req
+        required: true
+        schema:
+          $ref: '#/definitions/admintype.SaveRoleOwnerRequest'
+      produces:
+      - application/json
+      responses: {}
+      summary: 保存角色负责人
+      tags:
+      - 后台管理
+  /api/auth/feishu/config:
+    get:
+      produces:
+      - application/json
+      responses: {}
+      summary: 获取飞书 SSO 前端配置
+      tags:
+      - 认证
+  /api/auth/feishu/sso/login:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: json入参
+        in: body
+        name: req
+        required: true
+        schema:
+          $ref: '#/definitions/authtype.FeishuSSOLoginRequest'
+      produces:
+      - application/json
+      responses: {}
+      summary: 飞书 SSO 登录
+      tags:
+      - 认证
+  /api/auth/logout:
+    post:
+      produces:
+      - application/json
+      responses: {}
+      summary: 登出
+      tags:
+      - 认证
+  /api/checkpoints/{checkpointID}/approve:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 检查点ID
+        in: path
+        name: checkpointID
+        required: true
+        type: string
+      - description: json入参
+        in: body
+        name: req
+        required: true
+        schema:
+          $ref: '#/definitions/pipelinetype.UpdateCheckpointDecisionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pipelinetype.CheckpointEnvelope'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/pipelinetype.ErrorEnvelope'
+      summary: 审批通过检查点
+      tags:
+      - Checkpoint
+  /api/checkpoints/{checkpointID}/reject:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 检查点ID
+        in: path
+        name: checkpointID
+        required: true
+        type: string
+      - description: json入参
+        in: body
+        name: req
+        required: true
+        schema:
+          $ref: '#/definitions/pipelinetype.UpdateCheckpointDecisionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pipelinetype.CheckpointEnvelope'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/pipelinetype.ErrorEnvelope'
+      summary: 驳回检查点
+      tags:
+      - Checkpoint
+  /api/health:
+    get:
+      produces:
+      - application/json
+      responses: {}
+      summary: 服务健康检查
+      tags:
+      - 健康检查
+  /api/me:
+    get:
+      produces:
+      - application/json
+      responses: {}
+      summary: 当前登录用户信息
+      tags:
+      - 认证
+  /api/pipeline-runs:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pipelinetype.PipelineRunListEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/pipelinetype.ErrorEnvelope'
+      summary: 获取流水线运行列表
+      tags:
+      - Pipeline
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: json入参
+        in: body
+        name: req
+        required: true
+        schema:
+          $ref: '#/definitions/pipelinetype.CreatePipelineRunRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/pipelinetype.PipelineRunDetailEnvelope'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/pipelinetype.ErrorEnvelope'
+      summary: 创建流水线运行
+      tags:
+      - Pipeline
+  /api/pipeline-runs/{id}:
+    get:
+      parameters:
+      - description: 流水线运行ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pipelinetype.PipelineRunDetailEnvelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/pipelinetype.ErrorEnvelope'
+      summary: 获取流水线运行详情
+      tags:
+      - Pipeline
+  /api/pipeline-runs/{id}/artifacts:
+    get:
+      parameters:
+      - description: 流水线运行ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pipelinetype.RunArtifactListEnvelope'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/pipelinetype.ErrorEnvelope'
+      summary: 获取流水线产物列表
+      tags:
+      - Pipeline
+  /api/pipeline-runs/{id}/checkpoints:
+    get:
+      parameters:
+      - description: 流水线运行ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pipelinetype.RunCheckpointListEnvelope'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/pipelinetype.ErrorEnvelope'
+      summary: 获取流水线检查点列表
+      tags:
+      - Pipeline
+  /api/pipeline-runs/{id}/pause:
+    post:
+      parameters:
+      - description: 流水线运行ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pipelinetype.RunStatusEnvelope'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/pipelinetype.ErrorEnvelope'
+      summary: 暂停流水线运行
+      tags:
+      - Pipeline
+  /api/pipeline-runs/{id}/resume:
+    post:
+      parameters:
+      - description: 流水线运行ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pipelinetype.RunStatusEnvelope'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/pipelinetype.ErrorEnvelope'
+      summary: 恢复流水线运行
+      tags:
+      - Pipeline
+  /api/pipeline-runs/{id}/stages:
+    get:
+      parameters:
+      - description: 流水线运行ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pipelinetype.RunStageListEnvelope'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/pipelinetype.ErrorEnvelope'
+      summary: 获取流水线阶段列表
+      tags:
+      - Pipeline
+  /api/pipeline-runs/{id}/start:
+    post:
+      parameters:
+      - description: 流水线运行ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pipelinetype.RunStatusEnvelope'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/pipelinetype.ErrorEnvelope'
+      summary: 启动流水线运行
+      tags:
+      - Pipeline
+  /api/pipeline-runs/{id}/terminate:
+    post:
+      parameters:
+      - description: 流水线运行ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pipelinetype.RunStatusEnvelope'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/pipelinetype.ErrorEnvelope'
+      summary: 终止流水线运行
+      tags:
+      - Pipeline
+  /api/pipeline-runs/from-session:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: json入参
+        in: body
+        name: req
+        required: true
+        schema:
+          $ref: '#/definitions/pipelinetype.CreatePipelineRunFromSessionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/pipelinetype.PipelineRunDetailEnvelope'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/pipelinetype.ErrorEnvelope'
+      summary: 从会话创建流水线运行
+      tags:
+      - Pipeline
+  /api/pipeline-templates:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/pipelinetype.PipelineTemplateListEnvelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/pipelinetype.ErrorEnvelope'
+      summary: 获取流水线模板列表
+      tags:
+      - Pipeline
+  /api/sessions:
+    get:
+      produces:
+      - application/json
+      responses: {}
+      summary: 会话列表
+      tags:
+      - 会话
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: json入参
+        in: body
+        name: req
+        required: true
+        schema:
+          $ref: '#/definitions/sessiontype.CreateSessionRequest'
+      produces:
+      - application/json
+      responses: {}
+      summary: 创建会话
+      tags:
+      - 会话
+  /api/sessions/{sessionID}:
+    get:
+      parameters:
+      - description: 会话ID
+        in: path
+        name: sessionID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses: {}
+      summary: 会话详情
+      tags:
+      - 会话
+  /api/sessions/{sessionID}/messages:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 会话ID
+        in: path
+        name: sessionID
+        required: true
+        type: string
+      - description: json入参
+        in: body
+        name: req
+        required: true
+        schema:
+          $ref: '#/definitions/sessiontype.CreateMessageRequest'
+      produces:
+      - application/json
+      responses: {}
+      summary: 追加消息
+      tags:
+      - 会话
+  /api/sessions/{sessionID}/messages/stream:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 会话ID
+        in: path
+        name: sessionID
+        required: true
+        type: string
+      - description: json入参
+        in: body
+        name: req
+        required: true
+        schema:
+          $ref: '#/definitions/sessiontype.CreateMessageRequest'
+      produces:
+      - text/event-stream
+      responses: {}
+      summary: 流式追加消息（SSE）
+      tags:
+      - 会话
+  /api/sessions/{sessionID}/publish:
+    post:
+      parameters:
+      - description: 会话ID
+        in: path
+        name: sessionID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses: {}
+      summary: 发布会话
+      tags:
+      - 会话
+  /api/tasks/{taskID}:
+    get:
+      parameters:
+      - description: 任务ID
+        in: path
+        name: taskID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses: {}
+      summary: 任务详情
+      tags:
+      - 任务
+  /api/tasks/{taskID}/status:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: 任务ID
+        in: path
+        name: taskID
+        required: true
+        type: string
+      - description: json入参
+        in: body
+        name: req
+        required: true
+        schema:
+          $ref: '#/definitions/tasktype.UpdateTaskStatusRequest'
+      produces:
+      - application/json
+      responses: {}
+      summary: 更新任务状态
+      tags:
+      - 任务
+swagger: "2.0"

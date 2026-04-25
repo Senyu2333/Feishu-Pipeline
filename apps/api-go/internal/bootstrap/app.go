@@ -82,7 +82,7 @@ func NewApplication(ctx context.Context, configPath string, version string) (*Ap
 	sessionService := service.NewSessionService(repository, authService, aiClient)
 	taskService := service.NewTaskService(repository, feishuClient)
 	adminService := service.NewAdminService(repository)
-	pipelineService := service.NewPipelineService(feishuClient)
+	pipelineService := service.NewPipelineService(repository)
 	publishService := service.NewPublishService(repository, authService, agentEngine, feishuClient, pipelineService)
 	sessionService.SetPublisher(publishService)
 

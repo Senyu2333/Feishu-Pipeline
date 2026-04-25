@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"feishu-pipeline/apps/api-go/internal/model"
+	"feishu-pipeline/apps/api-go/internal/pipeline"
 	agenttype "feishu-pipeline/apps/api-go/internal/type/agent"
 	"feishu-pipeline/apps/api-go/internal/utils"
 
@@ -81,6 +82,14 @@ func (r *Repository) AutoMigrate(ctx context.Context) error {
 		&model.RoleOwner{},
 		&model.KnowledgeSource{},
 		&model.MessageDelivery{},
+		&model.PipelineTemplate{},
+		&model.PipelineRun{},
+		&model.StageRun{},
+		&model.Artifact{},
+		&model.Checkpoint{},
+		&model.AgentRun{},
+		&model.GitDelivery{},
+		&model.InPageEditSession{},
 	)
 }
 
@@ -130,6 +139,10 @@ func (r *Repository) Seed(ctx context.Context) error {
 			if err := tx.Create(&items).Error; err != nil {
 				return err
 			}
+		}
+
+		if err := r.seedPipelineTemplatesTx(ctx, tx); err != nil {
+			return err
 		}
 
 		return nil
@@ -453,4 +466,177 @@ func (r *Repository) SearchKnowledgeSources(ctx context.Context, query string, l
 		Limit(limit).
 		Find(&items).Error
 	return items, err
+}
+
+func (r *Repository) seedPipelineTemplatesTx(ctx context.Context, tx *gorm.DB) error {
+	var count int64
+	if err := tx.WithContext(ctx).Model(&model.PipelineTemplate{}).Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+
+	now := time.Now().UTC()
+	template := model.PipelineTemplate{
+		ID:             pipeline.DefaultTemplateID,
+		Name:           "Feature Delivery",
+		Description:    "默认新功能研发交付流水线模板",
+		Version:        "v1",
+		DefinitionJSON: pipeline.DefaultTemplateDefinitionJSON(),
+		IsActive:       true,
+		BaseModel:      model.BaseModel{CreatedAt: now, UpdatedAt: now},
+	}
+	return tx.WithContext(ctx).Create(&template).Error
+}
+
+func (r *Repository) ListPipelineTemplates(ctx context.Context) ([]model.PipelineTemplate, error) {
+	var items []model.PipelineTemplate
+	err := r.db.WithContext(ctx).Order("created_at ASC").Find(&items).Error
+	return items, err
+}
+
+func (r *Repository) GetPipelineTemplateByID(ctx context.Context, templateID string) (model.PipelineTemplate, error) {
+	var item model.PipelineTemplate
+	err := r.db.WithContext(ctx).First(&item, "id = ?", templateID).Error
+	return item, err
+}
+
+func (r *Repository) SavePipelineTemplate(ctx context.Context, template *model.PipelineTemplate) error {
+	if template.ID == "" {
+		template.ID = utils.NewID("plt")
+	}
+	return r.db.WithContext(ctx).Save(template).Error
+}
+
+func (r *Repository) CreatePipelineRun(ctx context.Context, run *model.PipelineRun) error {
+	return r.db.WithContext(ctx).Create(run).Error
+}
+
+func (r *Repository) GetPipelineRunByID(ctx context.Context, runID string) (model.PipelineRun, error) {
+	var item model.PipelineRun
+	err := r.db.WithContext(ctx).First(&item, "id = ?", runID).Error
+	return item, err
+}
+
+func (r *Repository) ListPipelineRuns(ctx context.Context) ([]model.PipelineRun, error) {
+	var items []model.PipelineRun
+	err := r.db.WithContext(ctx).Order("created_at DESC").Find(&items).Error
+	return items, err
+}
+
+func (r *Repository) UpdatePipelineRunStatus(ctx context.Context, runID string, status model.PipelineRunStatus) error {
+	updates := map[string]any{"status": status, "updated_at": time.Now().UTC()}
+	if status == model.PipelineRunRunning {
+		now := time.Now().UTC()
+		updates["started_at"] = &now
+	}
+	if status == model.PipelineRunCompleted || status == model.PipelineRunFailed || status == model.PipelineRunTerminated {
+		now := time.Now().UTC()
+		updates["finished_at"] = &now
+	}
+	return r.db.WithContext(ctx).Model(&model.PipelineRun{}).Where("id = ?", runID).Updates(updates).Error
+}
+
+func (r *Repository) UpdatePipelineRunCurrentStage(ctx context.Context, runID string, stageKey string) error {
+	return r.db.WithContext(ctx).Model(&model.PipelineRun{}).Where("id = ?", runID).Updates(map[string]any{
+		"current_stage_key": stageKey,
+		"updated_at":        time.Now().UTC(),
+	}).Error
+}
+
+func (r *Repository) CreateStageRuns(ctx context.Context, items []model.StageRun) error {
+	if len(items) == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Create(&items).Error
+}
+
+func (r *Repository) ListStageRunsByPipelineRunID(ctx context.Context, runID string) ([]model.StageRun, error) {
+	var items []model.StageRun
+	err := r.db.WithContext(ctx).Where("pipeline_run_id = ?", runID).Order("created_at ASC").Find(&items).Error
+	return items, err
+}
+
+func (r *Repository) UpdateStageRunStatus(ctx context.Context, stageRunID string, status model.StageRunStatus) error {
+	updates := map[string]any{"status": status, "updated_at": time.Now().UTC()}
+	if status == model.StageRunRunning {
+		now := time.Now().UTC()
+		updates["started_at"] = &now
+	}
+	if status == model.StageRunSucceeded || status == model.StageRunFailed || status == model.StageRunSkipped {
+		now := time.Now().UTC()
+		updates["finished_at"] = &now
+	}
+	return r.db.WithContext(ctx).Model(&model.StageRun{}).Where("id = ?", stageRunID).Updates(updates).Error
+}
+
+func (r *Repository) SaveStageRunOutput(ctx context.Context, stageRunID string, outputJSON string, errorMessage string) error {
+	return r.db.WithContext(ctx).Model(&model.StageRun{}).Where("id = ?", stageRunID).Updates(map[string]any{
+		"output_json":   outputJSON,
+		"error_message": errorMessage,
+		"updated_at":    time.Now().UTC(),
+	}).Error
+}
+
+func (r *Repository) CreateArtifact(ctx context.Context, item *model.Artifact) error {
+	return r.db.WithContext(ctx).Create(item).Error
+}
+
+func (r *Repository) ListArtifactsByPipelineRunID(ctx context.Context, runID string) ([]model.Artifact, error) {
+	var items []model.Artifact
+	err := r.db.WithContext(ctx).Where("pipeline_run_id = ?", runID).Order("created_at ASC").Find(&items).Error
+	return items, err
+}
+
+func (r *Repository) CreateCheckpoint(ctx context.Context, item *model.Checkpoint) error {
+	return r.db.WithContext(ctx).Create(item).Error
+}
+
+func (r *Repository) GetCheckpointByID(ctx context.Context, checkpointID string) (model.Checkpoint, error) {
+	var item model.Checkpoint
+	err := r.db.WithContext(ctx).First(&item, "id = ?", checkpointID).Error
+	return item, err
+}
+
+func (r *Repository) UpdateCheckpointDecision(ctx context.Context, checkpointID string, status model.CheckpointStatus, decision string, comment string, approverID string) error {
+	now := time.Now().UTC()
+	return r.db.WithContext(ctx).Model(&model.Checkpoint{}).Where("id = ?", checkpointID).Updates(map[string]any{
+		"status":      status,
+		"decision":    decision,
+		"comment":     comment,
+		"approver_id": approverID,
+		"decided_at":  &now,
+		"updated_at":  now,
+	}).Error
+}
+
+func (r *Repository) ListCheckpointsByPipelineRunID(ctx context.Context, runID string) ([]model.Checkpoint, error) {
+	var items []model.Checkpoint
+	err := r.db.WithContext(ctx).Where("pipeline_run_id = ?", runID).Order("created_at ASC").Find(&items).Error
+	return items, err
+}
+
+func (r *Repository) GetSessionByID(ctx context.Context, sessionID string) (model.Session, error) {
+	var session model.Session
+	err := r.db.WithContext(ctx).Preload("Owner").First(&session, "id = ?", sessionID).Error
+	return session, err
+}
+
+func (r *Repository) ListMessagesBySessionID(ctx context.Context, sessionID string) ([]model.Message, error) {
+	var items []model.Message
+	err := r.db.WithContext(ctx).Where("session_id = ?", sessionID).Order("created_at ASC").Find(&items).Error
+	return items, err
+}
+
+func (r *Repository) CountMessagesBySessionID(ctx context.Context, sessionID string) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&model.Message{}).Where("session_id = ?", sessionID).Count(&count).Error
+	return count, err
+}
+
+func (r *Repository) CountTasksBySessionID(ctx context.Context, sessionID string) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&model.Task{}).Where("session_id = ?", sessionID).Count(&count).Error
+	return count, err
 }

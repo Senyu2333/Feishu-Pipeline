@@ -132,6 +132,8 @@ type GitDeliveryStatus string
 
 const (
 	GitDeliveryPending   GitDeliveryStatus = "pending"
+	GitDeliveryDraft     GitDeliveryStatus = "draft"
+	GitDeliveryReady     GitDeliveryStatus = "ready"
 	GitDeliveryCompleted GitDeliveryStatus = "completed"
 	GitDeliveryFailed    GitDeliveryStatus = "failed"
 )
@@ -237,16 +239,20 @@ type AgentRun struct {
 }
 
 type GitDelivery struct {
-	ID              string            `gorm:"primaryKey;size:64"`
-	PipelineRunID   string            `gorm:"size:64;not null;index"`
-	Provider        string            `gorm:"size:64;not null"`
-	Repo            string            `gorm:"size:255;not null"`
-	BaseBranch      string            `gorm:"size:255;not null"`
-	HeadBranch      string            `gorm:"size:255;not null"`
-	CommitSHA       string            `gorm:"size:128"`
-	PRMRURL         string            `gorm:"size:512"`
-	SummaryMarkdown string            `gorm:"type:text"`
-	Status          GitDeliveryStatus `gorm:"size:32;not null;index"`
+	ID               string            `gorm:"primaryKey;size:64"`
+	PipelineRunID    string            `gorm:"size:64;not null;index"`
+	Provider         string            `gorm:"size:64;not null"`
+	Repo             string            `gorm:"size:255;not null"`
+	BaseBranch       string            `gorm:"size:255;not null"`
+	HeadBranch       string            `gorm:"size:255;not null"`
+	CommitSHA        string            `gorm:"size:128"`
+	PRMRURL          string            `gorm:"size:512"`
+	PRMRTitle        string            `gorm:"size:255"`
+	PRMRBody         string            `gorm:"type:text"`
+	ChangedFilesJSON string            `gorm:"type:text"`
+	ValidationJSON   string            `gorm:"type:text"`
+	SummaryMarkdown  string            `gorm:"type:text"`
+	Status           GitDeliveryStatus `gorm:"size:32;not null;index"`
 	BaseModel
 }
 

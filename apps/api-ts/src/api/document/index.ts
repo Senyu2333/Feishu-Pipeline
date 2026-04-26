@@ -2,10 +2,6 @@ import axios from 'axios'
 import lark from '@larksuiteoapi/node-sdk'
 import { feishuClient } from '../../lib/feishu.js'
 
-// 飞书应用配置
-const FEISHU_APP_ID = process.env.FEISHU_APP_ID ?? 'cli_a954fa893fb85bc6'
-const FEISHU_APP_SECRET = process.env.FEISHU_APP_SECRET ?? 'aYDUH3soLMlwONsU262qpcziZmjVDwOe'
-
 /**
  * 创建飞书文档
  */

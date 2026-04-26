@@ -9,8 +9,8 @@ import { feishuClient, lark, getDocumentRawContent } from '../lib/feishu.js'
 import { http } from '../lib/http.js'
 
 // 飞书应用配置
-const FEISHU_APP_ID = process.env.FEISHU_APP_ID ?? 'cli_a954fa893fb85bc6'
-const FEISHU_APP_SECRET = process.env.FEISHU_APP_SECRET ?? 'aYDUH3soLMlwONsU262qpcziZmjVDwOe'
+const FEISHU_APP_ID = process.env.FEISHU_APP_ID ?? ''
+const FEISHU_APP_SECRET = process.env.FEISHU_APP_SECRET ?? ''
 
 export async function feishuRoutes(app: FastifyInstance) {
   // ── 示例 1: 获取飞书文档内容（Go 后端没有的 API）──────────────────────

@@ -9,24 +9,36 @@ type PublishJob struct {
 	SessionID string
 }
 
+type PipelineRunJob struct {
+	RunID string
+}
+
 type PublishHandler interface {
 	HandlePublish(context.Context, PublishJob) error
 }
 
-type Runner struct {
-	logger  *log.Logger
-	handler PublishHandler
-	queue   chan PublishJob
+type PipelineRunHandler interface {
+	HandlePipelineRun(context.Context, PipelineRunJob) error
 }
 
-func NewRunner(logger *log.Logger, handler PublishHandler) *Runner {
+type Runner struct {
+	logger          *log.Logger
+	publishHandler  PublishHandler
+	pipelineHandler PipelineRunHandler
+	publishQueue    chan PublishJob
+	pipelineQueue   chan PipelineRunJob
+}
+
+func NewRunner(logger *log.Logger, publishHandler PublishHandler, pipelineHandler PipelineRunHandler) *Runner {
 	if logger == nil {
 		logger = log.Default()
 	}
 	return &Runner{
-		logger:  logger,
-		handler: handler,
-		queue:   make(chan PublishJob, 64),
+		logger:          logger,
+		publishHandler:  publishHandler,
+		pipelineHandler: pipelineHandler,
+		publishQueue:    make(chan PublishJob, 64),
+		pipelineQueue:   make(chan PipelineRunJob, 64),
 	}
 }
 
@@ -36,9 +48,19 @@ func (r *Runner) Start(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				return
-			case job := <-r.queue:
-				if err := r.handler.HandlePublish(ctx, job); err != nil {
+			case job := <-r.publishQueue:
+				if r.publishHandler == nil {
+					continue
+				}
+				if err := r.publishHandler.HandlePublish(ctx, job); err != nil {
 					r.logger.Printf("publish job failed for session %s: %v", job.SessionID, err)
+				}
+			case job := <-r.pipelineQueue:
+				if r.pipelineHandler == nil {
+					continue
+				}
+				if err := r.pipelineHandler.HandlePipelineRun(ctx, job); err != nil {
+					r.logger.Printf("pipeline run job failed for run %s: %v", job.RunID, err)
 				}
 			}
 		}
@@ -46,5 +68,9 @@ func (r *Runner) Start(ctx context.Context) {
 }
 
 func (r *Runner) Enqueue(job PublishJob) {
-	r.queue <- job
+	r.publishQueue <- job
+}
+
+func (r *Runner) EnqueuePipelineRun(job PipelineRunJob) {
+	r.pipelineQueue <- job
 }

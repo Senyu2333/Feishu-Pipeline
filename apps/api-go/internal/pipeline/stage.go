@@ -3,11 +3,11 @@ package pipeline
 import "feishu-pipeline/apps/api-go/internal/model"
 
 type StageDefinition struct {
-	Key          string
-	Name         string
-	Type         model.StageType
-	Order        int
-	IsCheckpoint bool
+	Key          string          `json:"key"`
+	Name         string          `json:"name"`
+	Type         model.StageType `json:"type"`
+	Order        int             `json:"order"`
+	IsCheckpoint bool            `json:"isCheckpoint"`
 }
 
 const (
@@ -30,4 +30,22 @@ var DefaultStageDefinitions = []StageDefinition{
 	{Key: StageCodeReview, Name: "代码评审", Type: model.StageTypeReview, Order: 6},
 	{Key: StageCheckpointReview, Name: "评审确认", Type: model.StageTypeCheckpoint, Order: 7, IsCheckpoint: true},
 	{Key: StageDelivery, Name: "交付集成", Type: model.StageTypeDelivery, Order: 8},
+}
+
+func IsRunnableStageStatus(status model.StageRunStatus) bool {
+	switch status {
+	case model.StageRunPending, model.StageRunQueued, model.StageRunFailed:
+		return true
+	default:
+		return false
+	}
+}
+
+func NextStageKey(stageKey string) string {
+	for idx, stage := range DefaultStageDefinitions {
+		if stage.Key == stageKey && idx+1 < len(DefaultStageDefinitions) {
+			return DefaultStageDefinitions[idx+1].Key
+		}
+	}
+	return ""
 }

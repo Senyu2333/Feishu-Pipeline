@@ -554,7 +554,7 @@ func (r *Repository) UpdatePipelineRunStatus(ctx context.Context, runID string, 
 	updates := map[string]any{"status": status, "updated_at": time.Now().UTC()}
 	if status == model.PipelineRunRunning {
 		now := time.Now().UTC()
-		updates["started_at"] = &now
+		updates["started_at"] = gorm.Expr("COALESCE(started_at, ?)", now)
 	}
 	if status == model.PipelineRunCompleted || status == model.PipelineRunFailed || status == model.PipelineRunTerminated {
 		now := time.Now().UTC()

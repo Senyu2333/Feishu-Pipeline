@@ -1,665 +1,355 @@
-import { useEffect, useRef, useState } from 'react'
-import { Graph } from '@antv/x6'
-import { Button, Input, Tag, Space, Tooltip, message } from 'antd'
+import { useEffect, useMemo, useState } from 'react'
+import { Alert, Button, Card, Empty, Progress, Skeleton, Space, Tag, Tooltip, message } from 'antd'
 import {
-  ZoomInOutlined,
-  ZoomOutOutlined,
+  PauseCircleOutlined,
   PlayCircleOutlined,
-  SaveOutlined,
-  UndoOutlined,
-  RedoOutlined,
-  PlusOutlined,
-  SettingOutlined,
-  DeleteOutlined,
-  AppstoreOutlined,
-  ThunderboltOutlined,
-  CodeOutlined,
-  FlagOutlined,
-  NodeExpandOutlined,
+  ReloadOutlined,
+  StopOutlined,
+  SyncOutlined,
 } from '@ant-design/icons'
 import Sidebar from '../components/Sidebar'
+import {
+  type AgentRun,
+  type Artifact,
+  type PipelineRun,
+  type PipelineRunTimeline,
+  fetchPipelineRuns,
+  fetchPipelineTimeline,
+  formatDateTime,
+  formatDuration,
+  isLiveRun,
+  latestArtifact,
+  nextActionLabel,
+  pausePipelineRun,
+  resumePipelineRun,
+  runStatusMeta,
+  stageLabel,
+  stageStatusMeta,
+  startPipelineRun,
+  terminatePipelineRun,
+} from '../lib/pipeline'
 
-// 节点类型定义
-interface NodeTemplate {
-  type: string
-  label: string
-  icon: React.ReactNode
-  color: string
-  category: string
-}
-
-interface WorkflowNode {
-  id: string
-  type: string
-  label: string
-  x: number
-  y: number
-  config: Record<string, any>
-}
-
-// 节点模板
-const nodeTemplates: NodeTemplate[] = [
-  { type: 'input', label: '用户输入', icon: <FlagOutlined />, color: '#722ed1', category: 'trigger' },
-  { type: 'parsing', label: '需求解析', icon: <FlagOutlined />, color: '#722ed1', category: 'ai' },
-  { type: 'design', label: '方案设计', icon: <NodeExpandOutlined />, color: '#1890ff', category: 'ai' },
-  { type: 'coding', label: '编码实现', icon: <CodeOutlined />, color: '#52c41a', category: 'tool' },
-  { type: 'testing', label: '自动化测试', icon: <ThunderboltOutlined />, color: '#fa8c16', category: 'tool' },
-  { type: 'review', label: '人工评审', icon: <AppstoreOutlined />, color: '#eb2f96', category: 'logic' },
-  { type: 'delivery', label: '交付归档', icon: <FlagOutlined />, color: '#13c2c2', category: 'trigger' },
-]
+const sidebarWidth = 80
 
 export default function Workflows() {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const graphRef = useRef<Graph | null>(null)
-  
-  const [selectedNode, setSelectedNode] = useState<WorkflowNode | null>(null)
-  const [zoom, setZoom] = useState(100)
-  const [nodes, setNodes] = useState<WorkflowNode[]>([
-    { id: 'input-1', type: 'input', label: '用户输入', x: 50, y: 200, config: { description: '用户提交需求' } },
-    { id: 'parsing-1', type: 'parsing', label: '需求解析', x: 250, y: 200, config: { description: '解析用户需求，生成需求文档' } },
-    { id: 'design-1', type: 'design', label: '方案设计', x: 450, y: 200, config: { description: '设计技术方案和实现路径' } },
-    { id: 'coding-1', type: 'coding', label: '编码实现', x: 650, y: 200, config: { description: 'AI 辅助代码生成' } },
-    { id: 'testing-1', type: 'testing', label: '自动化测试', x: 850, y: 200, config: { description: '运行单元测试和集成测试' } },
-    { id: 'review-1', type: 'review', label: '人工评审', x: 1050, y: 200, config: { description: '人工代码评审，重点节点' } },
-    { id: 'delivery-1', type: 'delivery', label: '交付归档', x: 1250, y: 200, config: { description: '交付代码并归档' } },
-  ])
-  const [nodeConfig, setNodeConfig] = useState<Record<string, any>>({})
-  const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null)
+  const [runs, setRuns] = useState<PipelineRun[]>([])
+  const [selectedRunId, setSelectedRunId] = useState('')
+  const [timeline, setTimeline] = useState<PipelineRunTimeline | null>(null)
+  const [loadingRuns, setLoadingRuns] = useState(true)
+  const [loadingTimeline, setLoadingTimeline] = useState(false)
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [error, setError] = useState('')
 
-  // 初始化图 - 只在挂载时执行
+  const selectedRun = useMemo(
+    () => runs.find(run => run.id === selectedRunId) ?? timeline?.run,
+    [runs, selectedRunId, timeline],
+  )
+  const currentArtifact = latestArtifact(timeline ?? undefined)
+  const completionPercent = timeline?.summary.totalStages
+    ? Math.round((timeline.summary.completedStages / timeline.summary.totalStages) * 100)
+    : 0
+  const recentAgentRuns = useMemo(
+    () => [...(timeline?.agentRuns ?? [])].slice(-4).reverse(),
+    [timeline?.agentRuns],
+  )
+
+  const loadRuns = async () => {
+    setLoadingRuns(true)
+    setError('')
+    try {
+      const items = await fetchPipelineRuns()
+      setRuns(items)
+      setSelectedRunId(prev => prev || items[0]?.id || '')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加载流水线失败')
+      setRuns([])
+    } finally {
+      setLoadingRuns(false)
+    }
+  }
+
+  const loadTimeline = async (runId: string) => {
+    if (!runId) {
+      setTimeline(null)
+      return
+    }
+    setLoadingTimeline(true)
+    setError('')
+    try {
+      setTimeline(await fetchPipelineTimeline(runId))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加载工作台失败')
+      setTimeline(null)
+    } finally {
+      setLoadingTimeline(false)
+    }
+  }
+
   useEffect(() => {
-    if (!containerRef.current) return
+    void loadRuns()
+  }, [])
 
-    const graph = new Graph({
-      container: containerRef.current,
-      width: containerRef.current.clientWidth,
-      height: containerRef.current.clientHeight,
-      background: { color: '#f7f8fa' },
-      grid: { visible: true, type: 'dot', args: { color: '#e5e5e5', thickness: 1, scaleFactor: 5 } },
-      panning: true,
-      mousewheel: { enabled: true, modifiers: ['ctrl', 'meta'], factor: 1.1 },
-      connecting: {
-        snap: true,
-        anchor: 'center',
-        connectionPoint: 'anchor',
-        allowBlank: false,
-        allowLoop: false,
-        highlight: true,
-      },
-    })
-
-    // 初始化添加节点
-    nodes.forEach(node => {
-      graph.addNode({
-        id: node.id,
-        x: node.x,
-        y: node.y,
-        width: 180,
-        height: 72,
-        draggable: true,
-        attrs: {
-          body: {
-            fill: '#fff',
-            stroke: '#d9d9d9',
-            strokeWidth: 1,
-            rx: 8,
-            ry: 8,
-          },
-          label: {
-            text: node.label,
-            fill: '#262626',
-            fontSize: 13,
-            fontWeight: 600,
-            refX: 0.5,
-            refY: 0.4,
-            textAnchor: 'middle',
-          },
-        },
-        data: node,
-      })
-    })
-
-    // 注册事件
-    graph.on('node:selected', ({ node }) => {
-      const id = node.id
-      const nodeData = nodes.find(n => n.id === id)
-      if (nodeData) {
-        setSelectedNode(nodeData)
-        setNodeConfig(nodeData.config)
-      }
-    })
-    graph.on('blank:click', () => {
-      setSelectedNode(null)
-    })
-    graph.on('node:moved', () => {
-      // X6 自动管理位置，不触发 React 重新渲染
-    })
-    graph.on('node:contextmenu', ({ e, x, y }) => {
-      e.preventDefault()
-      setContextMenuPos({ x, y })
-    })
-    graph.on('blank:contextmenu', ({ e, x, y }) => {
-      e.preventDefault()
-      setContextMenuPos({ x, y })
-    })
-
-    // 添加默认边 - 使用简化的直线连接，避免干扰节点拖拽
-    graph.addEdge({
-      source: 'input-1',
-      target: 'parsing-1',
-      sourceCell: 'input-1',
-      targetCell: 'parsing-1',
-      sourcePort: 'out',
-      targetPort: 'in',
-      attrs: {
-        line: {
-          stroke: '#b37feb',
-          strokeWidth: 2,
-        },
-      },
-      connector: { name: 'normal' },
-      router: { name: 'orth' },
-    })
-
-    graph.addEdge({
-      source: 'parsing-1',
-      target: 'design-1',
-      sourceCell: 'parsing-1',
-      targetCell: 'design-1',
-      sourcePort: 'out',
-      targetPort: 'in',
-      attrs: {
-        line: {
-          stroke: '#b37feb',
-          strokeWidth: 2,
-        },
-      },
-      connector: { name: 'normal' },
-      router: { name: 'orth' },
-    })
-
-    graph.addEdge({
-      source: 'design-1',
-      target: 'coding-1',
-      sourceCell: 'design-1',
-      targetCell: 'coding-1',
-      sourcePort: 'out',
-      targetPort: 'in',
-      attrs: {
-        line: {
-          stroke: '#b37feb',
-          strokeWidth: 2,
-        },
-      },
-      connector: { name: 'normal' },
-      router: { name: 'orth' },
-    })
-
-    graph.addEdge({
-      source: 'coding-1',
-      target: 'testing-1',
-      sourceCell: 'coding-1',
-      targetCell: 'testing-1',
-      sourcePort: 'out',
-      targetPort: 'in',
-      attrs: {
-        line: {
-          stroke: '#b37feb',
-          strokeWidth: 2,
-        },
-      },
-      connector: { name: 'normal' },
-      router: { name: 'orth' },
-    })
-
-    graph.addEdge({
-      source: 'testing-1',
-      target: 'review-1',
-      sourceCell: 'testing-1',
-      targetCell: 'review-1',
-      sourcePort: 'out',
-      targetPort: 'in',
-      attrs: {
-        line: {
-          stroke: '#b37feb',
-          strokeWidth: 2,
-        },
-      },
-      connector: { name: 'normal' },
-      router: { name: 'orth' },
-    })
-
-    graph.addEdge({
-      source: 'review-1',
-      target: 'delivery-1',
-      sourceCell: 'review-1',
-      targetCell: 'delivery-1',
-      sourcePort: 'out',
-      targetPort: 'in',
-      attrs: {
-        line: {
-          stroke: '#b37feb',
-          strokeWidth: 2,
-        },
-      },
-      connector: { name: 'normal' },
-      router: { name: 'orth' },
-    })
-
-    graphRef.current = graph
-
-    const handleResize = () => {
-      if (containerRef.current) {
-        graph.resize(containerRef.current.clientWidth, containerRef.current.clientHeight)
-      }
-    }
-    window.addEventListener('resize', handleResize)
-
-    return () => {
-      window.removeEventListener('resize', handleResize)
-      graph.dispose()
-    }
-  }, [])  // 空依赖，只初始化一次
-
-  // 节点选择状态更新
   useEffect(() => {
-    const graph = graphRef.current
-    if (!graph) return
+    void loadTimeline(selectedRunId)
+  }, [selectedRunId])
 
-    // 遍历所有节点，更新选中状态样式
-    graph.getNodes().forEach(node => {
-      const nodeData = node.getData() as WorkflowNode
-      const isSelected = selectedNode?.id === node.id
-      const template = nodeTemplates.find(t => t.type === nodeData.type)
-      
-      if (isSelected && template) {
-        node.attr('body/stroke', template.color)
-        node.attr('body/strokeWidth', 2)
-      } else {
-        node.attr('body/stroke', '#d9d9d9')
-        node.attr('body/strokeWidth', 1)
-      }
-    })
-  }, [selectedNode])
-
-  // 添加/删除节点时同步到画布
   useEffect(() => {
-    const graph = graphRef.current
-    if (!graph) return
+    if (!timeline || !isLiveRun(timeline.run.status)) return
+    const timer = window.setInterval(() => {
+      void loadTimeline(timeline.run.id)
+    }, 8000)
+    return () => window.clearInterval(timer)
+  }, [timeline?.run.id, timeline?.run.status])
 
-    // 获取当前画布中的节点 ID
-    const existingIds = new Set(graph.getNodes().map(n => n.id))
-    const targetIds = new Set(nodes.map(n => n.id))
+  const refreshAll = async () => {
+    await loadRuns()
+    if (selectedRunId) await loadTimeline(selectedRunId)
+  }
 
-    // 删除不存在的节点
-    existingIds.forEach(id => {
-      if (!targetIds.has(id)) {
-        graph.getCellById(id)?.remove()
-      }
-    })
-
-    // 添加新节点
-    nodes.forEach(node => {
-      if (!existingIds.has(node.id)) {
-        graph.addNode({
-          id: node.id,
-          x: node.x,
-          y: node.y,
-          width: 180,
-          height: 72,
-          draggable: true,
-          attrs: {
-            body: {
-              fill: '#fff',
-              stroke: '#d9d9d9',
-              strokeWidth: 1,
-              rx: 8,
-              ry: 8,
-            },
-            label: {
-              text: node.label,
-              fill: '#262626',
-              fontSize: 13,
-              fontWeight: 600,
-              refX: 0.5,
-              refY: 0.4,
-              textAnchor: 'middle',
-            },
-          },
-          data: node,
-        })
-      }
-    })
-  }, [nodes])
-
-  // 缩放控制
-  const handleZoomIn = () => {
-    const graph = graphRef.current
-    if (graph) {
-      const newZoom = Number(graph.zoom(0.1))
-      setZoom(Math.round(newZoom * 100))
+  const runAction = async (action: string, fn: () => Promise<void>) => {
+    setActionLoading(action)
+    try {
+      await fn()
+      message.success('操作已提交')
+      await refreshAll()
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '操作失败')
+    } finally {
+      setActionLoading(null)
     }
   }
 
-  const handleZoomOut = () => {
-    const graph = graphRef.current
-    if (graph) {
-      const newZoom = Number(graph.zoom(-0.1))
-      setZoom(Math.round(newZoom * 100))
-    }
+  const renderRunActions = () => {
+    if (!selectedRun) return null
+    const status = selectedRun.status
+    return (
+      <Space>
+        {status === 'draft' || status === 'failed' ? (
+          <Tooltip title="启动">
+            <Button
+              type="primary"
+              icon={<PlayCircleOutlined />}
+              loading={actionLoading === 'start'}
+              onClick={() => runAction('start', () => startPipelineRun(selectedRun.id))}
+            />
+          </Tooltip>
+        ) : null}
+        {status === 'queued' || status === 'running' ? (
+          <Tooltip title="暂停">
+            <Button
+              icon={<PauseCircleOutlined />}
+              loading={actionLoading === 'pause'}
+              onClick={() => runAction('pause', () => pausePipelineRun(selectedRun.id))}
+            />
+          </Tooltip>
+        ) : null}
+        {status === 'paused' || status === 'failed' ? (
+          <Tooltip title="恢复">
+            <Button
+              icon={<PlayCircleOutlined />}
+              loading={actionLoading === 'resume'}
+              onClick={() => runAction('resume', () => resumePipelineRun(selectedRun.id))}
+            />
+          </Tooltip>
+        ) : null}
+        {['draft', 'queued', 'running', 'waiting_approval', 'paused', 'failed'].includes(status) ? (
+          <Tooltip title="终止">
+            <Button
+              danger
+              icon={<StopOutlined />}
+              loading={actionLoading === 'terminate'}
+              onClick={() => runAction('terminate', () => terminatePipelineRun(selectedRun.id))}
+            />
+          </Tooltip>
+        ) : null}
+        <Tooltip title="刷新">
+          <Button icon={<ReloadOutlined />} onClick={refreshAll} loading={loadingTimeline} />
+        </Tooltip>
+      </Space>
+    )
   }
-
-  const handleFit = () => {
-    const graph = graphRef.current
-    if (graph) {
-      graph.center()
-      graph.zoomTo(1)
-      setZoom(100)
-    }
-  }
-
-  // 添加节点
-  const handleAddNode = (type: string) => {
-    const template = nodeTemplates.find(t => t.type === type)
-    if (!template) return
-
-    const newNode: WorkflowNode = {
-      id: `${type}-${Date.now()}`,
-      type,
-      label: template.label,
-      x: contextMenuPos ? contextMenuPos.x : 400,
-      y: contextMenuPos ? contextMenuPos.y : 200,
-      config: { description: '' },
-    }
-    setNodes(prev => [...prev, newNode])
-    setContextMenuPos(null)
-    message.success(`添加 ${template.label} 节点`)
-  }
-
-  // 删除节点
-  const handleDeleteNode = () => {
-    if (!selectedNode) return
-    setNodes(prev => prev.filter(n => n.id !== selectedNode.id))
-    setSelectedNode(null)
-    message.success('节点已删除')
-  }
-
-  // 更新节点配置
-  const handleUpdateConfig = (key: string, value: any) => {
-    if (!selectedNode) return
-    setNodeConfig(prev => ({ ...prev, [key]: value }))
-    setNodes(prev => prev.map(n => 
-      n.id === selectedNode.id ? { ...n, config: { ...n.config, [key]: value } } : n
-    ))
-  }
-
-  // 运行工作流
-  const handleRun = () => {
-    message.loading({ content: '正在运行工作流...', key: 'run' })
-    setTimeout(() => {
-      message.success({ content: '工作流执行完成', key: 'run' })
-    }, 2000)
-  }
-
-  // 保存
-  const handleSave = () => {
-    message.success('工作流已保存')
-  }
-
-  // 右键菜单项
-  // const getContextMenuItems = (): MenuProps['items'] => [
-  // 右键菜单通过自定义弹窗实现
-
-  // 节点右键菜单
-  // const getNodeContextMenuItems = (): MenuProps['items'] => [
-
-  // 左侧导航固定 80px
-  const sidebarWidth = 80
 
   return (
     <div className="min-h-screen bg-background">
       <Sidebar />
-      <main className="h-screen flex flex-col overflow-hidden bg-surface-dim transition-all duration-300" style={{ marginLeft: `${sidebarWidth}px` }}>
-        {/* Toolbar */}
-        <div className="flex items-center justify-between px-4 py-2 bg-surface-container-low border-b border-outline-variant">
-          <div className="flex items-center gap-2">
-            <Space>
-              <Tooltip title="撤销">
-                <Button type="text" icon={<UndoOutlined />} />
-              </Tooltip>
-              <Tooltip title="重做">
-                <Button type="text" icon={<RedoOutlined />} />
-              </Tooltip>
-              <div className="w-px h-6 bg-outline-variant mx-1" />
-              <Tooltip title="缩小">
-                <Button type="text" icon={<ZoomOutOutlined />} onClick={handleZoomOut} />
-              </Tooltip>
-              <span className="text-sm text-on-surface-variant min-w-12 text-center">{zoom}%</span>
-              <Tooltip title="放大">
-                <Button type="text" icon={<ZoomInOutlined />} onClick={handleZoomIn} />
-              </Tooltip>
-              <Tooltip title="适应画布">
-                <Button type="text" icon={<AppstoreOutlined />} onClick={handleFit} />
-              </Tooltip>
-            </Space>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-on-surface">Alpha Release Pipeline</span>
-            <Tag color="default">草稿</Tag>
-          </div>
-          <div className="flex items-center gap-2">
-            <Space>
-              <Button icon={<SaveOutlined />} onClick={handleSave} className="!rounded-lg">
-                保存
-              </Button>
-              <Button type="primary" icon={<PlayCircleOutlined />} onClick={handleRun} className="!rounded-lg">
-                运行
-              </Button>
-            </Space>
-          </div>
-        </div>
-
-        {/* Main Content */}
-        <div className="flex-1 flex overflow-hidden">
-          {/* Left Panel - Node Templates */}
-          <aside className="w-56 bg-surface-container-lowest border-r border-outline-variant overflow-y-auto">
-            <div className="p-3 space-y-4">
+      <main className="h-screen overflow-hidden p-5 transition-all duration-300" style={{ marginLeft: `${sidebarWidth}px` }}>
+        <div className="flex h-full gap-4">
+          <aside className="w-80 shrink-0 overflow-y-auto rounded-lg border border-outline-variant bg-surface-container-lowest">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-outline-variant bg-surface-container-lowest px-4 py-3">
               <div>
-                <div className="text-xs font-semibold text-on-surface-variant tracking-wider mb-2">基础节点</div>
-                <div className="space-y-1">
-                  {nodeTemplates.filter(t => t.category === 'trigger').map(template => (
-                    <div
-                      key={template.type}
-                      className="flex items-center gap-2 p-2 rounded-lg hover:bg-surface-variant cursor-pointer transition-colors"
-                      onClick={() => handleAddNode(template.type)}
-                    >
-                      <div className="w-6 h-6 rounded flex items-center justify-center text-xs" style={{ background: template.color + '20', color: template.color }}>
-                        {template.icon}
-                      </div>
-                      <span className="text-sm text-on-surface">{template.label}</span>
-                    </div>
-                  ))}
-                </div>
+                <h1 className="m-0 text-lg font-bold text-on-surface">Pipeline 工作台</h1>
+                <div className="text-xs text-on-surface-variant">{runs.length} 个运行记录</div>
               </div>
-              <div>
-                <div className="text-xs font-semibold text-on-surface-variant tracking-wider mb-2">AI 节点</div>
-                <div className="space-y-1">
-                  {nodeTemplates.filter(t => t.category === 'ai').map(template => (
-                    <div
-                      key={template.type}
-                      className="flex items-center gap-2 p-2 rounded-lg hover:bg-surface-variant cursor-pointer transition-colors"
-                      onClick={() => handleAddNode(template.type)}
+              <Button type="text" icon={<ReloadOutlined />} onClick={refreshAll} loading={loadingRuns} />
+            </div>
+            <div className="p-3">
+              {loadingRuns ? <Skeleton active paragraph={{ rows: 8 }} /> : null}
+              {!loadingRuns && runs.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} /> : null}
+              <div className="space-y-2">
+                {runs.map(run => {
+                  const meta = runStatusMeta(run.status)
+                  const active = run.id === selectedRunId
+                  return (
+                    <button
+                      key={run.id}
+                      type="button"
+                      onClick={() => setSelectedRunId(run.id)}
+                      className={`w-full rounded-lg border p-3 text-left transition ${
+                        active ? 'border-primary bg-primary/5' : 'border-outline-variant bg-white hover:border-primary/50'
+                      }`}
                     >
-                      <div className="w-6 h-6 rounded flex items-center justify-center text-xs" style={{ background: template.color + '20', color: template.color }}>
-                        {template.icon}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-on-surface">{run.title}</div>
+                          <div className="mt-1 truncate text-xs text-on-surface-variant">{run.targetRepo} · {run.targetBranch}</div>
+                        </div>
+                        <Tag color={meta.color}>{meta.label}</Tag>
                       </div>
-                      <span className="text-sm text-on-surface">{template.label}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs font-semibold text-on-surface-variant tracking-wider mb-2">工具节点</div>
-                <div className="space-y-1">
-                  {nodeTemplates.filter(t => t.category === 'tool').map(template => (
-                    <div
-                      key={template.type}
-                      className="flex items-center gap-2 p-2 rounded-lg hover:bg-surface-variant cursor-pointer transition-colors"
-                      onClick={() => handleAddNode(template.type)}
-                    >
-                      <div className="w-6 h-6 rounded flex items-center justify-center text-xs" style={{ background: template.color + '20', color: template.color }}>
-                        {template.icon}
+                      <div className="mt-3 flex items-center justify-between text-xs text-on-surface-variant">
+                        <span>{stageLabel(run.currentStageKey)}</span>
+                        <span>{formatDateTime(run.updatedAt)}</span>
                       </div>
-                      <span className="text-sm text-on-surface">{template.label}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs font-semibold text-on-surface-variant tracking-wider mb-2">逻辑节点</div>
-                <div className="space-y-1">
-                  {nodeTemplates.filter(t => t.category === 'logic').map(template => (
-                    <div
-                      key={template.type}
-                      className="flex items-center gap-2 p-2 rounded-lg hover:bg-surface-variant cursor-pointer transition-colors"
-                      onClick={() => handleAddNode(template.type)}
-                    >
-                      <div className="w-6 h-6 rounded flex items-center justify-center text-xs" style={{ background: template.color + '20', color: template.color }}>
-                        {template.icon}
-                      </div>
-                      <span className="text-sm text-on-surface">{template.label}</span>
-                    </div>
-                  ))}
-                </div>
+                    </button>
+                  )
+                })}
               </div>
             </div>
           </aside>
 
-            {/* Center - Canvas with Context Menu */}
-            <div className="flex-1 relative" ref={containerRef}>
-              {/* Hint */}
-              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 px-4 py-2 bg-gray-800 text-white text-sm rounded-full opacity-60">
-                右键画布添加节点
-              </div>
-
-              {/* Mini Map */}
-              <div className="absolute bottom-4 right-4 w-36 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden z-10">
-                <div className="px-2 py-1 text-xs font-semibold text-gray-500 border-b border-gray-100">缩略图</div>
-                <div className="relative h-20 p-2">
-                  {nodes.map(node => {
-                    const template = nodeTemplates.find(t => t.type === node.type)
-                    return (
-                      <Tooltip key={node.id} title={node.label}>
-                        <div
-                          className={`absolute w-2 h-2 rounded-sm ${selectedNode?.id === node.id ? 'ring-2 ring-blue-500' : ''}`}
-                          style={{
-                            left: `${(node.x / 12)}%`,
-                            top: `${(node.y / 8)}%`,
-                            background: template?.color
-                          }}
-                        />
-                      </Tooltip>
-                    )
-                  })}
+          <section className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="mb-1 flex items-center gap-2">
+                  {selectedRun ? <Tag color={runStatusMeta(selectedRun.status).color}>{runStatusMeta(selectedRun.status).label}</Tag> : null}
+                  {timeline?.current?.nextAction ? <Tag color="blue">{nextActionLabel(timeline.current.nextAction)}</Tag> : null}
                 </div>
+                <h2 className="m-0 truncate text-2xl font-bold text-on-surface">{selectedRun?.title || '选择 PipelineRun'}</h2>
+                <p className="m-0 mt-1 truncate text-sm text-on-surface-variant">{selectedRun?.requirementText || '暂无运行记录'}</p>
               </div>
-
-              {/* Context Menu */}
-              {contextMenuPos && (
-                <>
-                  <div className="fixed inset-0 z-20" onClick={() => setContextMenuPos(null)} />
-                  <div
-                    className="fixed bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-30 min-w-48"
-                    style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
-                  >
-                    <div className="px-3 py-2 text-xs font-semibold text-gray-400 tracking-wider border-b border-gray-100">
-                      <PlusOutlined /> 添加节点
-                    </div>
-                    <div className="py-1">
-                      {nodeTemplates.map(template => (
-                        <div
-                          key={template.type}
-                          className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer"
-                          onClick={() => handleAddNode(template.type)}
-                        >
-                          <div className="w-5 h-5 rounded flex items-center justify-center text-xs" style={{ background: template.color + '20', color: template.color }}>
-                            {template.icon}
-                          </div>
-                          <span className="text-sm text-gray-700">{template.label}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
+              {renderRunActions()}
             </div>
 
-            {/* Right Panel - Properties */}
-            <aside className={`w-72 bg-white border-l border-gray-200 overflow-y-auto transition-all ${selectedNode ? '' : 'flex items-center justify-center'}`}>
-              {selectedNode ? (
-                <div className="p-4">
-                  <div className="flex items-center justify-between mb-4">
-                    <span className="font-semibold text-gray-800">节点配置</span>
-                    <Tag color="blue">{nodeTemplates.find(t => t.type === selectedNode.type)?.label}</Tag>
+            {error ? <Alert className="mb-4" type="error" showIcon message={error} /> : null}
+
+            <div className="grid grid-cols-4 gap-3">
+              <Metric title="完成阶段" value={`${timeline?.summary.completedStages ?? 0}/${timeline?.summary.totalStages ?? 0}`} />
+              <Metric title="当前阶段" value={stageLabel(timeline?.summary.currentStageKey)} />
+              <Metric title="运行耗时" value={formatDuration(timeline?.summary.durationMs)} />
+              <Metric title="AgentRun" value={`${timeline?.agentRuns.length ?? 0}`} />
+            </div>
+
+            <div className="mt-4 grid min-h-0 flex-1 grid-cols-[1fr_360px] gap-4 overflow-hidden">
+              <div className="min-w-0 overflow-y-auto">
+                <Card className="!rounded-lg">
+                  <div className="mb-3 flex items-center justify-between">
+                    <span className="font-semibold text-on-surface">阶段进度</span>
+                    <span className="text-sm text-on-surface-variant">{completionPercent}%</span>
                   </div>
+                  <Progress percent={completionPercent} showInfo={false} />
+                  <div className="mt-4 grid grid-cols-1 gap-2">
+                    {(timeline?.stages ?? []).map(stage => (
+                      <StageRow key={stage.id} stage={stage} active={stage.stageKey === timeline?.run.currentStageKey} />
+                    ))}
+                    {!timeline && !loadingTimeline ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} /> : null}
+                    {loadingTimeline ? <Skeleton active paragraph={{ rows: 6 }} /> : null}
+                  </div>
+                </Card>
+
+                <Card className="!mt-4 !rounded-lg" title="阶段产物">
+                  <div className="space-y-2">
+                    {(timeline?.artifacts ?? []).slice(-5).reverse().map(artifact => (
+                      <ArtifactItem key={artifact.id} artifact={artifact} />
+                    ))}
+                    {timeline?.artifacts.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} /> : null}
+                  </div>
+                </Card>
+              </div>
+
+              <aside className="min-w-0 overflow-y-auto">
+                <Card className="!rounded-lg" title="当前上下文">
                   <div className="space-y-4">
-                    <div>
-                      <label className="text-xs font-semibold text-gray-500">节点名称</label>
-                      <Input
-                        value={selectedNode.label}
-                        onChange={(e) => {
-                          const value = e.target.value
-                          setNodes(prev => prev.map(n => n.id === selectedNode.id ? { ...n, label: value } : n))
-                          setSelectedNode(prev => prev ? { ...prev, label: value } : null)
-                        }}
-                        className="mt-1 rounded-lg"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-gray-500">描述</label>
-                      <Input.TextArea
-                        rows={2}
-                        placeholder="节点功能描述..."
-                        value={nodeConfig.description || ''}
-                        onChange={(e) => handleUpdateConfig('description', e.target.value)}
-                        className="mt-1 rounded-lg"
-                      />
-                    </div>
-                    <div className="pt-3 border-t border-gray-100 flex gap-2">
-                      <Button danger icon={<DeleteOutlined />} onClick={handleDeleteNode} className="flex-1">
-                        删除
-                      </Button>
-                      <Button type="primary" onClick={handleSave} className="flex-1">
-                        保存配置
-                      </Button>
-                    </div>
+                    <Field label="当前阶段" value={stageLabel(timeline?.current?.stage?.stageKey)} />
+                    <Field label="下一动作" value={nextActionLabel(timeline?.current?.nextAction)} />
+                    <Field label="最新产物" value={currentArtifact?.title || '-'} />
+                    <Field label="交付草稿" value={timeline?.current?.delivery?.prmrTitle || '-'} />
                   </div>
-                </div>
-              ) : (
-                <div className="text-center text-gray-400 p-4">
-                  <SettingOutlined style={{ fontSize: 48 }} />
-                  <p className="mt-3 text-sm">选择节点以编辑配置</p>
-                  <p className="text-xs mt-1">点击画布上的节点查看和修改其属性</p>
-                </div>
-              )}
-            </aside>
-          </div>
+                </Card>
 
-          {/* Status Bar */}
-          <div className="flex items-center justify-between px-4 py-1.5 bg-white border-t border-gray-200 text-xs text-gray-500">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-green-500" />
-              <span>就绪</span>
+                <Card className="!mt-4 !rounded-lg" title="Agent 观测">
+                  <div className="space-y-3">
+                    {recentAgentRuns.map(agentRun => <AgentRunItem key={agentRun.id} agentRun={agentRun} />)}
+                    {recentAgentRuns.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} /> : null}
+                  </div>
+                </Card>
+              </aside>
             </div>
-            <div>
-              <span>自动保存</span>
-            </div>
-            <div className="flex items-center gap-4">
-              <span>节点: {nodes.length}</span>
-              <span>连线: {nodes.length - 1}</span>
-            </div>
-          </div>
-        </main>
+          </section>
+        </div>
+      </main>
+    </div>
+  )
+}
+
+function Metric({ title, value }: { title: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-outline-variant bg-white px-4 py-3">
+      <div className="text-xs font-semibold text-on-surface-variant">{title}</div>
+      <div className="mt-1 truncate text-xl font-bold text-on-surface">{value}</div>
+    </div>
+  )
+}
+
+function StageRow({ stage, active }: { stage: PipelineRunTimeline['stages'][number]; active: boolean }) {
+  const meta = stageStatusMeta(stage.status)
+  return (
+    <div className={`flex items-center gap-3 rounded-lg border px-3 py-2 ${active ? 'border-primary bg-primary/5' : 'border-outline-variant bg-white'}`}>
+      <div className={`flex h-8 w-8 items-center justify-center rounded-full ${stage.status === 'succeeded' ? 'bg-green-50 text-green-600' : 'bg-surface-container-high text-on-surface-variant'}`}>
+        {stage.status === 'running' ? <SyncOutlined spin /> : stage.attempt}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-semibold text-on-surface">{stageLabel(stage.stageKey)}</div>
+        <div className="truncate text-xs text-on-surface-variant">{stage.stageKey} · attempt {stage.attempt}</div>
+      </div>
+      <Tag color={meta.color}>{meta.label}</Tag>
+    </div>
+  )
+}
+
+function ArtifactItem({ artifact }: { artifact: Artifact }) {
+  return (
+    <div className="rounded-lg border border-outline-variant bg-white p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-on-surface">{artifact.title}</div>
+          <div className="mt-1 line-clamp-2 text-xs text-on-surface-variant">{artifact.contentText || artifact.artifactType}</div>
+        </div>
+        <Tag>{artifact.artifactType}</Tag>
+      </div>
+    </div>
+  )
+}
+
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-xs font-semibold text-on-surface-variant">{label}</div>
+      <div className="mt-1 break-words text-sm font-medium text-on-surface">{value}</div>
+    </div>
+  )
+}
+
+function AgentRunItem({ agentRun }: { agentRun: AgentRun }) {
+  const ok = agentRun.status === 'succeeded'
+  return (
+    <div className="rounded-lg border border-outline-variant bg-white p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold text-on-surface">{agentRun.agentKey}</div>
+          <div className="mt-1 truncate text-xs text-on-surface-variant">{agentRun.provider || '-'} · {agentRun.model || '-'}</div>
+        </div>
+        <Tag color={ok ? 'success' : 'error'}>{ok ? '成功' : '失败'}</Tag>
+      </div>
+      <div className="mt-2 text-xs text-on-surface-variant">{formatDuration(agentRun.latencyMs)}</div>
     </div>
   )
 }

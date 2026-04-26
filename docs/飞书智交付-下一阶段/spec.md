@@ -125,8 +125,9 @@
 
 9. 前端工作台现状
    - 已存在首页、需求新建、工作流、审批、监控、交付等页面入口
-   - `Workflows`、`Approvals`、`Delivery` 等页面仍以静态 Demo 数据和前端本地状态为主
-   - 前端尚未消费 `timeline/current` 聚合 API，也未接入真实 checkpoint approve/reject 和 delivery 数据
+   - `Workflows` 已接入 PipelineRun 列表、timeline/current、阶段进度、AgentRun、Artifact、Delivery 与 start/pause/resume/terminate 操作
+   - `Approvals` 已接入 current/timeline，能筛选 pending checkpoint 并调用 approve/reject
+   - `Delivery` 已接入 deliveries、GitDelivery 详情和关联 timeline，能展示 PR/MR 草稿、变更文件与验证摘要
 
 10. 本轮 S3 第一批开发完成能力
    - 新增统一 `AgentProvider` / `AgentRunner` / `PromptRegistry` 结构
@@ -148,6 +149,14 @@
    - 已重新生成 Swagger/OpenAPI 文档
    - 已清理旧 TS 辅助服务中硬编码的飞书/OpenAI 默认密钥
 
+12. 本轮工作台接入与真实环境核验完成能力
+   - 已使用真实 Ark 配置完成端到端 smoke run，7 条 AgentRun 均为 `provider=ark` 且 `status=succeeded`
+   - 已验证 checkpoint reject 后回退上一可执行阶段，并在重跑输入中携带驳回原因
+   - 已验证 GitDelivery 本地草稿生成与查询，默认不 push、不创建远程 PR/MR
+   - 修复异步 runner 中 pause/terminate 被运行中阶段覆盖的问题
+   - 修复 timeline durationMs 因每个阶段重新写入 startedAt 而失真的问题
+   - 已执行 `cd apps/api-go && go test ./...` 与 `pnpm --filter web build`，均通过
+
 ### 3.2 当前功能是否正常
 
 当前功能状态判断：
@@ -159,12 +168,12 @@
 - deterministic Pipeline 执行：正常
 - Stage Handler 拆分后测试：正常
 - timeline/current 聚合 API：测试通过
-- 真实 AI Agent 执行：已具备最小 provider adapter，但仍需配置真实 API Key 后做联调
+- 真实 AI Agent 执行：已用 Ark / `doubao-seed-2-0-lite-260215` 完成真实配置联调
 - 多 Provider 切换：已支持统一 provider 抽象；第二个真实 provider 尚未实现
 - GitDelivery 交付闭环：基础记录与查询 API 已完成；远程 push/PR 仍未启用
 - timeline/current nextAction：已完成
-- 前端工作台消费 timeline/current：后端数据已具备，前端尚未接入
-- 前端工作流、审批、交付页面：已有静态界面，未接真实 Pipeline 数据，本次未做前端构建核验
+- 前端工作台消费 timeline/current：`Workflows`、`Approvals`、`Delivery` 已接入真实 Pipeline API
+- 前端工作流、审批、交付页面：已从静态 Demo 数据升级为真实后端闭环展示，并通过前端构建
 - 页面圈选与热更新：未完成，且不属于本阶段主线
 
 ### 3.3 本次核验依据
@@ -256,7 +265,7 @@ timeline/current 已经能返回聚合数据，并通过 `nextAction` 表达：
 - `completed`
 - `terminated`
 
-前端工作台下一步可以直接消费该字段驱动主按钮、审批面板和交付审查区。
+前端工作台已开始消费该字段驱动主按钮、审批面板和交付审查区。后续可继续增强筛选、搜索、AgentRun 详情抽屉和更细粒度的失败诊断。
 
 ---
 
@@ -362,7 +371,7 @@ timeline/current 已经能返回聚合数据，并通过 `nextAction` 表达：
 6. 不实现完整语义向量索引
 7. 不引入 Redis 或外部队列作为必需依赖
 8. 不重写当前 controller/service/repo/pipeline 分层
-9. 不做大规模前端工作台改造，除非用户后续明确要求
+9. 不做完整前端重设计；当前只接入 Workflows / Approvals / Delivery 的真实工作台数据
 10. 不引入不可本地运行的强外部依赖
 
 这些能力留到后续阶段。

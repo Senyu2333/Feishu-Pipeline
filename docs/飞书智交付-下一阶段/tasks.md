@@ -18,6 +18,8 @@
 - [x] 已核对前端工作流、审批、交付页面当前仍以静态 Demo 数据为主
 - [x] 已执行 `cd apps/api-go && go test ./...`，当前后端测试通过
 - [x] 已确认下一阶段从 S3：Agent 可插拔、调用可观测、交付可查询 开始推进
+- [x] 已执行真实 Ark 端到端 smoke run，确认主 Pipeline 闭环可跑通
+- [x] 已执行 `pnpm --filter web build`，确认前端工作台接入后可构建
 
 ---
 
@@ -350,12 +352,21 @@ Checkpoint 阶段仍由引擎和人工审批控制，不走 provider。
   - [x] failed run
   - [x] completed delivery run
 
+- [x] S3-5.5 前端工作台消费聚合 API
+  - [x] `Workflows` 消费 PipelineRun 列表、timeline/current、AgentRun、Artifact、Delivery
+  - [x] `Workflows` 接入 start/pause/resume/terminate 操作
+  - [x] `Approvals` 消费 current/timeline，展示 pending checkpoint 和审批上下文
+  - [x] `Approvals` 接入 checkpoint approve/reject
+  - [x] `Delivery` 消费 deliveries、GitDelivery 详情和关联 timeline
+  - [x] 新增前端 Pipeline API client 与状态映射工具
+
 ### 7.3 验收标准
 
 - [x] 前端可以通过 timeline/current 判断页面主状态
 - [x] waiting approval 时能拿到 checkpoint 和审批动作提示
 - [x] delivery 完成后能拿到交付记录
 - [x] 测试覆盖关键状态
+- [x] Workflows / Approvals / Delivery 已从静态 Demo 数据升级为真实 API 数据
 
 ---
 
@@ -383,21 +394,27 @@ Checkpoint 阶段仍由引擎和人工审批控制，不走 provider。
   - [x] stage agent 化测试
   - [x] delivery API 测试
   - [x] timeline/current 聚合测试
+  - [x] pause/terminate 异步 runner 回归测试
 
-- [ ] S3-6.4 演示脚本核验
-  - [ ] 创建 PipelineRun
-  - [ ] start
-  - [ ] 到达方案审批
-  - [ ] approve
-  - [ ] 到达评审确认
-  - [ ] approve
-  - [ ] delivery 完成
-  - [ ] 查询 timeline/current/delivery
+- [x] S3-6.4 演示脚本核验
+  - [x] 创建 PipelineRun
+  - [x] start
+  - [x] 到达方案审批
+  - [x] reject 后回退方案阶段并携带原因
+  - [x] approve
+  - [x] 到达评审确认
+  - [x] approve
+  - [x] delivery 完成
+  - [x] 查询 timeline/current/delivery
 
 - [x] S3-6.5 更新 checklist
   - [x] 把已完成项勾选
   - [x] 标记仍未完成项
   - [x] 记录测试结果
+
+- [x] S3-6.6 前端构建验证
+  - [x] `pnpm --filter web build`
+  - [x] Workflows / Approvals / Delivery 类型检查通过
 
 ### 8.3 验收标准
 
@@ -406,6 +423,7 @@ Checkpoint 阶段仍由引擎和人工审批控制，不走 provider。
 - [x] demo mode 无外部 key 可跑通
 - [x] 如果配置真实 provider，错误可观测且不破坏数据
 - [x] 文档与实现状态一致
+- [x] 前端工作台可展示后端闭环数据
 
 ---
 

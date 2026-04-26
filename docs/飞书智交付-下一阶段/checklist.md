@@ -50,9 +50,9 @@
 ### 2.2 当前已知缺口
 
 - [x] 真实 Agent Provider 已通过 Ark Key 联调
-- [!] 至少两个模型提供方的可配置切换尚未完成
+- [!] 至少两个模型提供方的真实 adapter 与运行时切换尚未完成
 - [x] Prompt Registry 已形成基础实现
-- [!] Agent 输出 JSON schema 字段类型校验仍需增强
+- [x] Agent 输出 JSON schema 字段类型校验已补充
 - [!] AgentRun token usage 真实统计仍需 provider client 支持
 - [x] GitDelivery 基础交付记录闭环已实现
 - [x] GitDelivery 查询 API 已实现
@@ -90,7 +90,7 @@
 
 - [x] deterministic provider 可运行
 - [x] 至少一个真实 provider 已接入或具备完整占位调用链路
-- [ ] 第二个 provider 的配置结构已预留
+- [x] 第二个 provider 的配置结构已预留
 - [x] provider 选择逻辑有测试
 - [x] fallback 逻辑有测试
 
@@ -137,6 +137,7 @@
 
 - [x] JSON 解析失败有错误记录
 - [x] schema 校验失败有错误记录
+- [x] schema 字段类型错误会触发 fallback
 - [x] provider 超时有错误记录
 - [x] fallback 被触发时可追踪原因
 - [x] 阶段失败不会留下不一致状态

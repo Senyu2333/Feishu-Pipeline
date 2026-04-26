@@ -85,6 +85,25 @@ func TestAgentRunnerFallsBackWhenProviderOutputInvalid(t *testing.T) {
 	}
 }
 
+func TestAgentRunnerFallsBackWhenProviderFieldTypeInvalid(t *testing.T) {
+	provider := stubProvider{name: "stub", model: "stub-model", content: `{"summary":"provider summary","goals":"g1,g2","acceptanceCriteria":["a1"]}`}
+	executor := pipeline.NewSequentialExecutor(pipeline.WithAgentRunner(pipeline.NewAgentRunner(provider, pipeline.DefaultPromptRegistry())))
+
+	result, err := executor.Execute(context.Background(), stageContext(pipeline.StageRequirementAnalysis, model.StageTypeAnalysis, map[string]any{}))
+	if err != nil {
+		t.Fatalf("execute with invalid provider field type: %v", err)
+	}
+	if result.AgentRun == nil {
+		t.Fatalf("expected agent observation")
+	}
+	if result.AgentRun.Provider != pipeline.AgentProviderDeterministic {
+		t.Fatalf("expected deterministic fallback, got %s", result.AgentRun.Provider)
+	}
+	if !strings.Contains(result.AgentRun.TokenUsageJSON, `field \"goals\" must be array`) {
+		t.Fatalf("expected field type fallback reason in token usage: %s", result.AgentRun.TokenUsageJSON)
+	}
+}
+
 func TestAgentRunnerFallsBackWhenProviderReturnsError(t *testing.T) {
 	provider := stubProvider{name: "stub", model: "stub-model", err: errors.New("provider timeout")}
 	executor := pipeline.NewSequentialExecutor(pipeline.WithAgentRunner(pipeline.NewAgentRunner(provider, pipeline.DefaultPromptRegistry())))

@@ -88,13 +88,14 @@ S3-1 -> S3-2 -> S3-3 -> S3-4 -> S3-5 -> S3-6
   - [x] AgentRun 中明确记录 provider=`internal` 或 `deterministic`
   - 结论：无 provider、provider 错误、JSON 解析失败、schema 校验失败时均回退 deterministic handler，并在 AgentRun tokenUsageJSON 中记录 fallbackReason。
 
-- [~] S3-1.4 设计真实 provider 配置
+- [x] S3-1.4 设计真实 provider 配置
   - [x] 支持 provider name
   - [x] 支持 model name
   - [x] 支持 API Key 从环境变量读取
   - [x] 支持超时配置
   - [x] 支持 demo mode 开关
-  - 结论：现有 `ai.provider`、`ai.ark.*` 配置已被 Pipeline provider adapter 复用；demo mode 目前表现为“无 key 自动 fallback”，后续可补显式 `demo_mode` 配置项。
+  - [x] 预留第二个 `openai_compatible` provider 配置结构
+  - 结论：现有 `ai.provider`、`ai.ark.*` 配置已被 Pipeline provider adapter 复用；新增 `ai.openai_compatible.*` 配置结构用于后续第二真实 provider adapter 联调。demo mode 目前表现为“无 key 自动 fallback”，后续可补显式 `demo_mode` 配置项。
 
 - [x] S3-1.5 接入至少一个真实 provider 的最小调用链路
   - [x] 如果使用已有 AI client，则包装为 Provider
@@ -155,13 +156,13 @@ Checkpoint 阶段仍由引擎和人工审批控制，不走 provider。
   - [x] prompt 中明确输出 JSON 字段
   - [x] prompt 中要求不得输出非 JSON 或需包裹可解析 JSON
 
-- [~] S3-2.3 建立输出结构校验
+- [x] S3-2.3 建立输出结构校验
   - [x] 校验 required fields
-  - [ ] 校验字段类型
+  - [x] 校验字段类型
   - [x] 校验空输出
   - [x] 校验 JSON 解析失败
   - [x] 输出不合法时记录错误并 fallback 或 fail
-  - 说明：本轮先做 required/empty/JSON parse 校验；字段类型细化留到下一批。
+  - 说明：字段类型由 PromptRegistry 中的 schema 定义驱动，字符串字段必须为 JSON string，数组字段必须为 JSON array；未知扩展字段暂不拦截。
 
 - [x] S3-2.4 改造 RequirementAnalysisHandler
   - [x] 构造需求分析输入

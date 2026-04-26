@@ -155,6 +155,8 @@
    - 已验证 GitDelivery 本地草稿生成与查询，默认不 push、不创建远程 PR/MR
    - 修复异步 runner 中 pause/terminate 被运行中阶段覆盖的问题
    - 修复 timeline durationMs 因每个阶段重新写入 startedAt 而失真的问题
+   - 已补充 Agent 输出字段类型校验，防止真实 provider 返回字段名正确但类型错误的 JSON 污染下游阶段
+   - 已预留第二个 `openai_compatible` provider 配置结构，后续可在 adapter 完成后接入第二真实模型提供方
    - 已执行 `cd apps/api-go && go test ./...` 与 `pnpm --filter web build`，均通过
 
 ### 3.2 当前功能是否正常
@@ -169,7 +171,7 @@
 - Stage Handler 拆分后测试：正常
 - timeline/current 聚合 API：测试通过
 - 真实 AI Agent 执行：已用 Ark / `doubao-seed-2-0-lite-260215` 完成真实配置联调
-- 多 Provider 切换：已支持统一 provider 抽象；第二个真实 provider 尚未实现
+- 多 Provider 切换：已支持统一 provider 抽象并预留第二 provider 配置；第二个真实 provider adapter 尚未实现
 - GitDelivery 交付闭环：基础记录与查询 API 已完成；远程 push/PR 仍未启用
 - timeline/current nextAction：已完成
 - 前端工作台消费 timeline/current：`Workflows`、`Approvals`、`Delivery` 已接入真实 Pipeline API
@@ -219,7 +221,7 @@
 本轮已完成 Prompt Registry 基础骨架。后续仍需继续增强：
 
 - 根据真实 provider 输出质量微调 prompt
-- 为各阶段补更严格的字段类型校验
+- 引入更完整的 JSON Schema 校验，包括数组元素结构和枚举值校验
 - 给 prompt 增加代码库上下文压缩策略，避免输入过长
 
 ### 4.3 AgentRun 可观测信息还不够完整

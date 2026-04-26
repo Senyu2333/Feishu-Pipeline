@@ -45,6 +45,10 @@ type RunAgentRunListResponse struct {
 	AgentRuns []AgentRunResponse `json:"agentRuns"`
 }
 
+type RunGitDeliveryListResponse struct {
+	Deliveries []GitDeliveryResponse `json:"deliveries"`
+}
+
 type RunStatusResponse struct {
 	ID              string                  `json:"id"`
 	Status          model.PipelineRunStatus `json:"status"`
@@ -143,11 +147,64 @@ type AgentRunResponse struct {
 	UpdatedAt      time.Time            `json:"updatedAt"`
 }
 
+type GitDeliveryResponse struct {
+	ID               string                  `json:"id"`
+	PipelineRunID    string                  `json:"pipelineRunId"`
+	Provider         string                  `json:"provider"`
+	Repo             string                  `json:"repo"`
+	BaseBranch       string                  `json:"baseBranch"`
+	HeadBranch       string                  `json:"headBranch"`
+	CommitSHA        string                  `json:"commitSha,omitempty"`
+	PRMRURL          string                  `json:"prmrUrl,omitempty"`
+	PRMRTitle        string                  `json:"prmrTitle,omitempty"`
+	PRMRBody         string                  `json:"prmrBody,omitempty"`
+	ChangedFilesJSON string                  `json:"changedFilesJson,omitempty"`
+	ValidationJSON   string                  `json:"validationJson,omitempty"`
+	SummaryMarkdown  string                  `json:"summaryMarkdown,omitempty"`
+	Status           model.GitDeliveryStatus `json:"status"`
+	CreatedAt        time.Time               `json:"createdAt"`
+	UpdatedAt        time.Time               `json:"updatedAt"`
+}
+
 type PipelineRunDetailResponse struct {
 	Run         PipelineRunResponse  `json:"run"`
 	Stages      []StageRunResponse   `json:"stages"`
 	Artifacts   []ArtifactResponse   `json:"artifacts"`
 	Checkpoints []CheckpointResponse `json:"checkpoints"`
+}
+
+type PipelineRunTimelineSummaryResponse struct {
+	TotalStages      int        `json:"totalStages"`
+	CompletedStages  int        `json:"completedStages"`
+	FailedStages     int        `json:"failedStages"`
+	WaitingApproval  bool       `json:"waitingApproval"`
+	CurrentStageKey  string     `json:"currentStageKey"`
+	LatestArtifactID string     `json:"latestArtifactId,omitempty"`
+	LatestDeliveryID string     `json:"latestDeliveryId,omitempty"`
+	StartedAt        *time.Time `json:"startedAt,omitempty"`
+	FinishedAt       *time.Time `json:"finishedAt,omitempty"`
+	DurationMS       int64      `json:"durationMs,omitempty"`
+}
+
+type PipelineRunCurrentResponse struct {
+	Run        PipelineRunResponse  `json:"run"`
+	Stage      *StageRunResponse    `json:"stage,omitempty"`
+	Artifact   *ArtifactResponse    `json:"artifact,omitempty"`
+	Checkpoint *CheckpointResponse  `json:"checkpoint,omitempty"`
+	AgentRun   *AgentRunResponse    `json:"agentRun,omitempty"`
+	Delivery   *GitDeliveryResponse `json:"delivery,omitempty"`
+	NextAction string               `json:"nextAction"`
+}
+
+type PipelineRunTimelineResponse struct {
+	Run         PipelineRunResponse                `json:"run"`
+	Current     *PipelineRunCurrentResponse        `json:"current,omitempty"`
+	Stages      []StageRunResponse                 `json:"stages"`
+	Artifacts   []ArtifactResponse                 `json:"artifacts"`
+	Checkpoints []CheckpointResponse               `json:"checkpoints"`
+	AgentRuns   []AgentRunResponse                 `json:"agentRuns"`
+	Deliveries  []GitDeliveryResponse              `json:"deliveries"`
+	Summary     PipelineRunTimelineSummaryResponse `json:"summary"`
 }
 
 type ErrorEnvelope struct {
@@ -169,6 +226,16 @@ type PipelineRunDetailEnvelope struct {
 	Error string                    `json:"error,omitempty"`
 }
 
+type PipelineRunTimelineEnvelope struct {
+	Data  PipelineRunTimelineResponse `json:"data,omitempty"`
+	Error string                      `json:"error,omitempty"`
+}
+
+type PipelineRunCurrentEnvelope struct {
+	Data  PipelineRunCurrentResponse `json:"data,omitempty"`
+	Error string                     `json:"error,omitempty"`
+}
+
 type RunStageListEnvelope struct {
 	Data  RunStageListResponse `json:"data,omitempty"`
 	Error string               `json:"error,omitempty"`
@@ -187,6 +254,16 @@ type RunCheckpointListEnvelope struct {
 type RunAgentRunListEnvelope struct {
 	Data  RunAgentRunListResponse `json:"data,omitempty"`
 	Error string                  `json:"error,omitempty"`
+}
+
+type RunGitDeliveryListEnvelope struct {
+	Data  RunGitDeliveryListResponse `json:"data,omitempty"`
+	Error string                     `json:"error,omitempty"`
+}
+
+type GitDeliveryEnvelope struct {
+	Data  GitDeliveryResponse `json:"data,omitempty"`
+	Error string              `json:"error,omitempty"`
 }
 
 type RunStatusEnvelope struct {
@@ -221,4 +298,8 @@ func NewCheckpointResponse(item model.Checkpoint) CheckpointResponse {
 
 func NewAgentRunResponse(item model.AgentRun) AgentRunResponse {
 	return AgentRunResponse{ID: item.ID, PipelineRunID: item.PipelineRunID, StageRunID: item.StageRunID, AgentKey: item.AgentKey, Provider: item.Provider, Model: item.Model, PromptSnapshot: item.PromptSnapshot, InputJSON: item.InputJSON, OutputJSON: item.OutputJSON, TokenUsageJSON: item.TokenUsageJSON, LatencyMS: item.LatencyMS, Status: item.Status, ErrorMessage: item.ErrorMessage, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+}
+
+func NewGitDeliveryResponse(item model.GitDelivery) GitDeliveryResponse {
+	return GitDeliveryResponse{ID: item.ID, PipelineRunID: item.PipelineRunID, Provider: item.Provider, Repo: item.Repo, BaseBranch: item.BaseBranch, HeadBranch: item.HeadBranch, CommitSHA: item.CommitSHA, PRMRURL: item.PRMRURL, PRMRTitle: item.PRMRTitle, PRMRBody: item.PRMRBody, ChangedFilesJSON: item.ChangedFilesJSON, ValidationJSON: item.ValidationJSON, SummaryMarkdown: item.SummaryMarkdown, Status: item.Status, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }

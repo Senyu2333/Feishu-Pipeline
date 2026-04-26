@@ -4,8 +4,8 @@ import { importOpenApiFromSpec } from '../../lib/apifox.js'
 import { sendMessage } from '../../lib/feishu.js'
 
 // 飞书应用配置
-const FEISHU_APP_ID = process.env.FEISHU_APP_ID ?? 'cli_a954fa893fb85bc6'
-const FEISHU_APP_SECRET = process.env.FEISHU_APP_SECRET ?? 'aYDUH3soLMlwONsU262qpcziZmjVDwOe'
+const FEISHU_APP_ID = process.env.FEISHU_APP_ID ?? ''
+const FEISHU_APP_SECRET = process.env.FEISHU_APP_SECRET ?? ''
 
 /**
  * 获取飞书文档纯文本内容（用于 AI Function Calling）
@@ -635,7 +635,7 @@ export async function runAIChatStream(
 `
 
       const openai = new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY || 'sk-7e5dc9c5692e4d42926dc78db5a02cc4',
+        apiKey: process.env.OPENAI_API_KEY || '',
         baseURL: 'https://api.deepseek.com'
       })
 
@@ -736,7 +736,7 @@ export async function runAIChatStream(
 }
 
 const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY || 'sk-7e5dc9c5692e4d42926dc78db5a02cc4',
+    apiKey: process.env.OPENAI_API_KEY || '',
     baseURL:"https://api.deepseek.com"
 })
 

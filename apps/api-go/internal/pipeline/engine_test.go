@@ -117,6 +117,19 @@ func TestEngineRunCompletesAfterCheckpointApprovals(t *testing.T) {
 	if !hasArtifactType(artifacts, model.ArtifactDeliverySummary) {
 		t.Fatalf("delivery summary artifact missing")
 	}
+	deliveries, err := repository.ListGitDeliveriesByPipelineRunID(ctx, run.ID)
+	if err != nil {
+		t.Fatalf("list deliveries: %v", err)
+	}
+	if len(deliveries) != 1 {
+		t.Fatalf("expected 1 delivery, got %d", len(deliveries))
+	}
+	if deliveries[0].Status != model.GitDeliveryReady {
+		t.Fatalf("expected ready delivery, got %s", deliveries[0].Status)
+	}
+	if deliveries[0].PRMRTitle == "" || deliveries[0].PRMRBody == "" || deliveries[0].SummaryMarkdown == "" {
+		t.Fatalf("expected delivery pr draft fields: %+v", deliveries[0])
+	}
 	agentRuns, err := repository.ListAgentRunsByPipelineRunID(ctx, run.ID)
 	if err != nil {
 		t.Fatalf("list agent runs: %v", err)

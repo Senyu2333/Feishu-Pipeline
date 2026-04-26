@@ -148,6 +148,7 @@
         },
         "/api/checkpoints/{checkpointID}/approve": {
             "post": {
+                "description": "对 pending 且绑定到 waiting_approval Run/Stage 的 checkpoint 做 approve 决策。审批通过后 checkpoint stage 会标记 succeeded，PipelineRun 重新 queued 并继续后续阶段；重复审批会被拒绝。",
                 "consumes": [
                     "application/json"
                 ],
@@ -194,6 +195,7 @@
         },
         "/api/checkpoints/{checkpointID}/reject": {
             "post": {
+                "description": "对 pending 且绑定到 waiting_approval Run/Stage 的 checkpoint 做 reject 决策。驳回后会回退到上一可执行阶段，携带 reject comment 作为重做上下文，并将后续阶段与产物标记为待重跑/已 superseded。",
                 "consumes": [
                     "application/json"
                 ],
@@ -238,6 +240,41 @@
                 }
             }
         },
+        "/api/git-deliveries/{deliveryID}": {
+            "get": {
+                "description": "按 deliveryID 查询 GitDelivery 详情，包含目标仓库、基础分支、工作分支、PR/MR 标题草稿、正文草稿、变更文件 JSON、验证摘要和交付状态。该接口用于交付审查页展示。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pipeline"
+                ],
+                "summary": "获取单个交付记录详情",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "交付记录ID",
+                        "name": "deliveryID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pipelinetype.GitDeliveryEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/pipelinetype.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/api/health": {
             "get": {
                 "produces": [
@@ -264,6 +301,7 @@
         },
         "/api/pipeline-runs": {
             "get": {
+                "description": "按创建时间倒序返回 PipelineRun 列表。前端工作台可用该接口展示所有研发流水线运行记录、当前阶段、运行状态、目标仓库和工作分支。",
                 "produces": [
                     "application/json"
                 ],
@@ -287,6 +325,7 @@
                 }
             },
             "post": {
+                "description": "通过自然语言需求创建一个新的 PipelineRun。服务端会按模板事务化初始化 StageRun、Checkpoint 和初始 Artifact，但不会自动开始执行；创建后需调用 start 接口进入队列。targetRepo 为空时默认 self，targetBranch 为空时默认 main。",
                 "consumes": [
                     "application/json"
                 ],
@@ -326,6 +365,7 @@
         },
         "/api/pipeline-runs/from-session": {
             "post": {
+                "description": "将已有需求会话中的消息和摘要汇总为 requirementText，并创建 PipelineRun。该接口用于把需求对话链路桥接到 DevFlow Pipeline，不会自动启动执行。",
                 "consumes": [
                     "application/json"
                 ],
@@ -365,6 +405,7 @@
         },
         "/api/pipeline-runs/{id}": {
             "get": {
+                "description": "返回单个 PipelineRun 的基础详情，以及该运行下的 StageRun、Artifact 和 Checkpoint 列表。适合详情页初始化使用；若需要 AgentRun、GitDelivery、当前动作提示，请使用 timeline/current 接口。",
                 "produces": [
                     "application/json"
                 ],
@@ -397,8 +438,44 @@
                 }
             }
         },
+        "/api/pipeline-runs/{id}/agent-runs": {
+            "get": {
+                "description": "返回指定 PipelineRun 的 AgentRun 列表。每条记录包含 AgentKey、Provider、Model、PromptSnapshot、输入输出、token usage 占位、耗时、状态和错误信息，用于审计真实 provider 调用、fallback 和阶段执行结果。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pipeline"
+                ],
+                "summary": "获取流水线 Agent 执行记录",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "流水线运行ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pipelinetype.RunAgentRunListEnvelope"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/pipelinetype.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/api/pipeline-runs/{id}/artifacts": {
             "get": {
+                "description": "返回指定 PipelineRun 的全部 Artifact。Artifact 是阶段间数据流转的核心载体，包含结构化需求、技术方案、代码变更计划、测试报告、评审报告和交付摘要等。",
                 "produces": [
                     "application/json"
                 ],
@@ -433,6 +510,7 @@
         },
         "/api/pipeline-runs/{id}/checkpoints": {
             "get": {
+                "description": "返回指定 PipelineRun 的人工检查点列表。当前默认模板包含方案审批和评审确认两个 Human-in-the-Loop 节点，支持 approve/reject 决策。",
                 "produces": [
                     "application/json"
                 ],
@@ -465,8 +543,79 @@
                 }
             }
         },
+        "/api/pipeline-runs/{id}/current": {
+            "get": {
+                "description": "返回当前 PipelineRun 的主操作上下文，包括当前阶段、当前产物、当前 checkpoint、当前 AgentRun、最新 GitDelivery 和 nextAction。nextAction 可用于驱动前端主按钮和审批/交付面板。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pipeline"
+                ],
+                "summary": "获取流水线当前阶段详情",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "流水线运行ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pipelinetype.PipelineRunCurrentEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/pipelinetype.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/pipeline-runs/{id}/deliveries": {
+            "get": {
+                "description": "返回指定 PipelineRun 的 GitDelivery 交付草稿列表。当前实现只创建本地可审查的交付记录和 PR/MR 草稿，不执行 git push，也不创建远程 PR/MR。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pipeline"
+                ],
+                "summary": "获取流水线交付记录列表",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "流水线运行ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pipelinetype.RunGitDeliveryListEnvelope"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/pipelinetype.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/api/pipeline-runs/{id}/pause": {
             "post": {
+                "description": "将 queued 或 running 状态的 PipelineRun 暂停。暂停后后台执行器会停止继续推进后续阶段；已完成的阶段和产物不会被删除。",
                 "produces": [
                     "application/json"
                 ],
@@ -501,6 +650,7 @@
         },
         "/api/pipeline-runs/{id}/resume": {
             "post": {
+                "description": "将 paused 或 failed 状态的 PipelineRun 重新置为 queued 并投递后台 runner。waiting_approval 状态不能通过 resume 绕过审批，必须调用 checkpoint approve/reject。",
                 "produces": [
                     "application/json"
                 ],
@@ -535,6 +685,7 @@
         },
         "/api/pipeline-runs/{id}/stages": {
             "get": {
+                "description": "返回指定 PipelineRun 的全部 StageRun，包含阶段 key、类型、状态、尝试次数、输入输出 JSON、错误信息和开始/结束时间。用于展示阶段流转和调试单个阶段状态。",
                 "produces": [
                     "application/json"
                 ],
@@ -569,6 +720,7 @@
         },
         "/api/pipeline-runs/{id}/start": {
             "post": {
+                "description": "将 draft 或 failed 状态的 PipelineRun 置为 queued 并投递后台 runner。执行器会顺序运行可执行阶段，遇到 checkpoint 时自动进入 waiting_approval。",
                 "produces": [
                     "application/json"
                 ],
@@ -603,6 +755,7 @@
         },
         "/api/pipeline-runs/{id}/terminate": {
             "post": {
+                "description": "将未完成的 PipelineRun 标记为 terminated。terminated 和 completed 都是终态，不能再次 start/resume；该接口不会删除已有产物、AgentRun 或交付记录。",
                 "produces": [
                     "application/json"
                 ],
@@ -635,8 +788,44 @@
                 }
             }
         },
+        "/api/pipeline-runs/{id}/timeline": {
+            "get": {
+                "description": "聚合返回 PipelineRun、所有 StageRun、Artifact、Checkpoint、AgentRun、GitDelivery、当前阶段和 summary。summary 包含阶段统计、等待审批状态、最新产物、最新交付记录和耗时信息，是前端工作台的主数据接口。",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Pipeline"
+                ],
+                "summary": "获取流水线工作台时间线",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "流水线运行ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/pipelinetype.PipelineRunTimelineEnvelope"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/pipelinetype.ErrorEnvelope"
+                        }
+                    }
+                }
+            }
+        },
         "/api/pipeline-templates": {
             "get": {
+                "description": "返回当前系统可用的 PipelineTemplate。模板定义了赛题要求的研发流水线阶段、顺序和 checkpoint，用于创建 PipelineRun 时初始化 StageRun、Checkpoint 和初始需求产物。",
                 "produces": [
                     "application/json"
                 ],
@@ -949,6 +1138,21 @@
                 }
             }
         },
+        "model.AgentRunStatus": {
+            "type": "string",
+            "enum": [
+                "pending",
+                "running",
+                "succeeded",
+                "failed"
+            ],
+            "x-enum-varnames": [
+                "AgentRunPending",
+                "AgentRunRunning",
+                "AgentRunSucceeded",
+                "AgentRunFailed"
+            ]
+        },
         "model.ArtifactType": {
             "type": "string",
             "enum": [
@@ -990,6 +1194,23 @@
             "x-enum-varnames": [
                 "CheckpointDesignReview",
                 "CheckpointCodeReview"
+            ]
+        },
+        "model.GitDeliveryStatus": {
+            "type": "string",
+            "enum": [
+                "pending",
+                "draft",
+                "ready",
+                "completed",
+                "failed"
+            ],
+            "x-enum-varnames": [
+                "GitDeliveryPending",
+                "GitDeliveryDraft",
+                "GitDeliveryReady",
+                "GitDeliveryCompleted",
+                "GitDeliveryFailed"
             ]
         },
         "model.PipelineRunStatus": {
@@ -1088,6 +1309,56 @@
                 "TaskTesting",
                 "TaskDone"
             ]
+        },
+        "pipelinetype.AgentRunResponse": {
+            "type": "object",
+            "properties": {
+                "agentKey": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "errorMessage": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "inputJson": {
+                    "type": "string"
+                },
+                "latencyMs": {
+                    "type": "integer"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "outputJson": {
+                    "type": "string"
+                },
+                "pipelineRunId": {
+                    "type": "string"
+                },
+                "promptSnapshot": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "stageRunId": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/model.AgentRunStatus"
+                },
+                "tokenUsageJson": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
         },
         "pipelinetype.ArtifactResponse": {
             "type": "object",
@@ -1225,6 +1496,107 @@
                 }
             }
         },
+        "pipelinetype.GitDeliveryEnvelope": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/pipelinetype.GitDeliveryResponse"
+                },
+                "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "pipelinetype.GitDeliveryResponse": {
+            "type": "object",
+            "properties": {
+                "baseBranch": {
+                    "type": "string"
+                },
+                "changedFilesJson": {
+                    "type": "string"
+                },
+                "commitSha": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "headBranch": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "pipelineRunId": {
+                    "type": "string"
+                },
+                "prmrBody": {
+                    "type": "string"
+                },
+                "prmrTitle": {
+                    "type": "string"
+                },
+                "prmrUrl": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "repo": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/model.GitDeliveryStatus"
+                },
+                "summaryMarkdown": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "validationJson": {
+                    "type": "string"
+                }
+            }
+        },
+        "pipelinetype.PipelineRunCurrentEnvelope": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/pipelinetype.PipelineRunCurrentResponse"
+                },
+                "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "pipelinetype.PipelineRunCurrentResponse": {
+            "type": "object",
+            "properties": {
+                "agentRun": {
+                    "$ref": "#/definitions/pipelinetype.AgentRunResponse"
+                },
+                "artifact": {
+                    "$ref": "#/definitions/pipelinetype.ArtifactResponse"
+                },
+                "checkpoint": {
+                    "$ref": "#/definitions/pipelinetype.CheckpointResponse"
+                },
+                "delivery": {
+                    "$ref": "#/definitions/pipelinetype.GitDeliveryResponse"
+                },
+                "nextAction": {
+                    "type": "string"
+                },
+                "run": {
+                    "$ref": "#/definitions/pipelinetype.PipelineRunResponse"
+                },
+                "stage": {
+                    "$ref": "#/definitions/pipelinetype.StageRunResponse"
+                }
+            }
+        },
         "pipelinetype.PipelineRunDetailEnvelope": {
             "type": "object",
             "properties": {
@@ -1326,6 +1698,96 @@
                 }
             }
         },
+        "pipelinetype.PipelineRunTimelineEnvelope": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/pipelinetype.PipelineRunTimelineResponse"
+                },
+                "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "pipelinetype.PipelineRunTimelineResponse": {
+            "type": "object",
+            "properties": {
+                "agentRuns": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/pipelinetype.AgentRunResponse"
+                    }
+                },
+                "artifacts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/pipelinetype.ArtifactResponse"
+                    }
+                },
+                "checkpoints": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/pipelinetype.CheckpointResponse"
+                    }
+                },
+                "current": {
+                    "$ref": "#/definitions/pipelinetype.PipelineRunCurrentResponse"
+                },
+                "deliveries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/pipelinetype.GitDeliveryResponse"
+                    }
+                },
+                "run": {
+                    "$ref": "#/definitions/pipelinetype.PipelineRunResponse"
+                },
+                "stages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/pipelinetype.StageRunResponse"
+                    }
+                },
+                "summary": {
+                    "$ref": "#/definitions/pipelinetype.PipelineRunTimelineSummaryResponse"
+                }
+            }
+        },
+        "pipelinetype.PipelineRunTimelineSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "completedStages": {
+                    "type": "integer"
+                },
+                "currentStageKey": {
+                    "type": "string"
+                },
+                "durationMs": {
+                    "type": "integer"
+                },
+                "failedStages": {
+                    "type": "integer"
+                },
+                "finishedAt": {
+                    "type": "string"
+                },
+                "latestArtifactId": {
+                    "type": "string"
+                },
+                "latestDeliveryId": {
+                    "type": "string"
+                },
+                "startedAt": {
+                    "type": "string"
+                },
+                "totalStages": {
+                    "type": "integer"
+                },
+                "waitingApproval": {
+                    "type": "boolean"
+                }
+            }
+        },
         "pipelinetype.PipelineTemplateListEnvelope": {
             "type": "object",
             "properties": {
@@ -1363,6 +1825,28 @@
                 },
                 "version": {
                     "type": "string"
+                }
+            }
+        },
+        "pipelinetype.RunAgentRunListEnvelope": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/pipelinetype.RunAgentRunListResponse"
+                },
+                "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "pipelinetype.RunAgentRunListResponse": {
+            "type": "object",
+            "properties": {
+                "agentRuns": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/pipelinetype.AgentRunResponse"
+                    }
                 }
             }
         },
@@ -1406,6 +1890,28 @@
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/pipelinetype.CheckpointResponse"
+                    }
+                }
+            }
+        },
+        "pipelinetype.RunGitDeliveryListEnvelope": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/pipelinetype.RunGitDeliveryListResponse"
+                },
+                "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "pipelinetype.RunGitDeliveryListResponse": {
+            "type": "object",
+            "properties": {
+                "deliveries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/pipelinetype.GitDeliveryResponse"
                     }
                 }
             }

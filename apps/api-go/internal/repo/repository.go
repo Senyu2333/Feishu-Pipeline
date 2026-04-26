@@ -2,6 +2,7 @@ package repo
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -513,6 +514,30 @@ func (r *Repository) CreatePipelineRun(ctx context.Context, run *model.PipelineR
 	return r.db.WithContext(ctx).Create(run).Error
 }
 
+func (r *Repository) CreatePipelineRunAggregate(ctx context.Context, run *model.PipelineRun, stages []model.StageRun, checkpoints []model.Checkpoint, artifacts []model.Artifact) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(run).Error; err != nil {
+			return err
+		}
+		if len(stages) > 0 {
+			if err := tx.Create(&stages).Error; err != nil {
+				return err
+			}
+		}
+		if len(checkpoints) > 0 {
+			if err := tx.Create(&checkpoints).Error; err != nil {
+				return err
+			}
+		}
+		if len(artifacts) > 0 {
+			if err := tx.Create(&artifacts).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (r *Repository) GetPipelineRunByID(ctx context.Context, runID string) (model.PipelineRun, error) {
 	var item model.PipelineRun
 	err := r.db.WithContext(ctx).First(&item, "id = ?", runID).Error
@@ -632,13 +657,16 @@ func (r *Repository) MarkArtifactsSupersededByStageRunID(ctx context.Context, st
 		return err
 	}
 	for _, item := range items {
-		meta := strings.TrimSpace(item.MetaJSON)
-		if meta == "" || meta == "{}" {
-			meta = `{"superseded":true}`
-		} else if !strings.Contains(meta, `"superseded"`) {
-			meta = strings.TrimSuffix(meta, "}") + `,"superseded":true}`
+		meta := map[string]any{}
+		if strings.TrimSpace(item.MetaJSON) != "" {
+			_ = json.Unmarshal([]byte(item.MetaJSON), &meta)
 		}
-		if err := r.db.WithContext(ctx).Model(&model.Artifact{}).Where("id = ?", item.ID).Updates(map[string]any{"meta_json": meta, "updated_at": time.Now().UTC()}).Error; err != nil {
+		meta["superseded"] = true
+		metaJSON, err := json.Marshal(meta)
+		if err != nil {
+			return err
+		}
+		if err := r.db.WithContext(ctx).Model(&model.Artifact{}).Where("id = ?", item.ID).Updates(map[string]any{"meta_json": string(metaJSON), "updated_at": time.Now().UTC()}).Error; err != nil {
 			return err
 		}
 	}
@@ -705,15 +733,6 @@ func (r *Repository) CreateAgentRun(ctx context.Context, item *model.AgentRun) e
 	return r.db.WithContext(ctx).Create(item).Error
 }
 
-func (r *Repository) UpdateAgentRunStatus(ctx context.Context, agentRunID string, status model.AgentRunStatus, outputJSON string, errorMessage string) error {
-	return r.db.WithContext(ctx).Model(&model.AgentRun{}).Where("id = ?", agentRunID).Updates(map[string]any{
-		"status":        status,
-		"output_json":   outputJSON,
-		"error_message": errorMessage,
-		"updated_at":    time.Now().UTC(),
-	}).Error
-}
-
 func (r *Repository) ListAgentRunsByPipelineRunID(ctx context.Context, runID string) ([]model.AgentRun, error) {
 	var items []model.AgentRun
 	err := r.db.WithContext(ctx).Where("pipeline_run_id = ?", runID).Order("created_at ASC").Find(&items).Error
@@ -724,6 +743,31 @@ func (r *Repository) ListAgentRunsByStageRunID(ctx context.Context, stageRunID s
 	var items []model.AgentRun
 	err := r.db.WithContext(ctx).Where("stage_run_id = ?", stageRunID).Order("created_at ASC").Find(&items).Error
 	return items, err
+}
+
+func (r *Repository) CreateGitDelivery(ctx context.Context, item *model.GitDelivery) error {
+	return r.db.WithContext(ctx).Create(item).Error
+}
+
+func (r *Repository) GetGitDeliveryByID(ctx context.Context, deliveryID string) (model.GitDelivery, error) {
+	var item model.GitDelivery
+	err := r.db.WithContext(ctx).First(&item, "id = ?", deliveryID).Error
+	return item, err
+}
+
+func (r *Repository) ListGitDeliveriesByPipelineRunID(ctx context.Context, runID string) ([]model.GitDelivery, error) {
+	var items []model.GitDelivery
+	err := r.db.WithContext(ctx).Where("pipeline_run_id = ?", runID).Order("created_at ASC").Find(&items).Error
+	return items, err
+}
+
+func (r *Repository) UpdateGitDeliveryStatus(ctx context.Context, deliveryID string, status model.GitDeliveryStatus, prmrURL string, commitSHA string) error {
+	return r.db.WithContext(ctx).Model(&model.GitDelivery{}).Where("id = ?", deliveryID).Updates(map[string]any{
+		"status":     status,
+		"prmr_url":   prmrURL,
+		"commit_sha": commitSHA,
+		"updated_at": time.Now().UTC(),
+	}).Error
 }
 
 func (r *Repository) GetSessionByID(ctx context.Context, sessionID string) (model.Session, error) {

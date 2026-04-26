@@ -60,7 +60,7 @@ func TestSequentialExecutorBuildsReviewFromTestReport(t *testing.T) {
 	if err := json.Unmarshal([]byte(result.OutputJSON), &payload); err != nil {
 		t.Fatalf("unmarshal output: %v", err)
 	}
-	if payload["conclusion"] != "needs_human_confirmation" {
+	if payload["conclusion"] != "needs_fix" {
 		t.Fatalf("unexpected review conclusion: %v", payload["conclusion"])
 	}
 	issues, ok := payload["issues"].([]any)

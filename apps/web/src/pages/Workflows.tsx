@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Button, Card, Empty, Progress, Skeleton, Space, Tag, Tooltip, message } from 'antd'
 import {
   PauseCircleOutlined,
@@ -39,6 +39,7 @@ export default function Workflows() {
   const [loadingTimeline, setLoadingTimeline] = useState(false)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const redirectedRunIdRef = useRef('')
 
   const selectedRun = useMemo(
     () => runs.find(run => run.id === selectedRunId) ?? timeline?.run,
@@ -99,6 +100,19 @@ export default function Workflows() {
       void loadTimeline(timeline.run.id)
     }, 8000)
     return () => window.clearInterval(timer)
+  }, [timeline?.run.id, timeline?.run.status])
+
+  useEffect(() => {
+    if (!timeline?.run?.id) return
+    if (timeline.run.status !== 'waiting_approval') {
+      if (redirectedRunIdRef.current === timeline.run.id) {
+        redirectedRunIdRef.current = ''
+      }
+      return
+    }
+    if (redirectedRunIdRef.current === timeline.run.id) return
+    redirectedRunIdRef.current = timeline.run.id
+    window.location.assign(`/approvals?runId=${encodeURIComponent(timeline.run.id)}`)
   }, [timeline?.run.id, timeline?.run.status])
 
   const refreshAll = async () => {

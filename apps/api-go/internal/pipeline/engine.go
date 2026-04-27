@@ -54,6 +54,10 @@ func (e *Engine) Run(ctx context.Context, runID string) error {
 	}
 
 	for _, stage := range stages {
+		run, err = e.repository.GetPipelineRunByID(ctx, runID)
+		if err != nil {
+			return err
+		}
 		if run.Status == model.PipelineRunPaused || run.Status == model.PipelineRunTerminated || run.Status == model.PipelineRunCompleted {
 			return nil
 		}

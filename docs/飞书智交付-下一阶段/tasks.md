@@ -18,6 +18,8 @@
 - [x] 已核对前端工作流、审批、交付页面当前仍以静态 Demo 数据为主
 - [x] 已执行 `cd apps/api-go && go test ./...`，当前后端测试通过
 - [x] 已确认下一阶段从 S3：Agent 可插拔、调用可观测、交付可查询 开始推进
+- [x] 已执行真实 Ark 端到端 smoke run，确认主 Pipeline 闭环可跑通
+- [x] 已执行 `pnpm --filter web build`，确认前端工作台接入后可构建
 
 ---
 
@@ -86,13 +88,14 @@ S3-1 -> S3-2 -> S3-3 -> S3-4 -> S3-5 -> S3-6
   - [x] AgentRun 中明确记录 provider=`internal` 或 `deterministic`
   - 结论：无 provider、provider 错误、JSON 解析失败、schema 校验失败时均回退 deterministic handler，并在 AgentRun tokenUsageJSON 中记录 fallbackReason。
 
-- [~] S3-1.4 设计真实 provider 配置
+- [x] S3-1.4 设计真实 provider 配置
   - [x] 支持 provider name
   - [x] 支持 model name
   - [x] 支持 API Key 从环境变量读取
   - [x] 支持超时配置
   - [x] 支持 demo mode 开关
-  - 结论：现有 `ai.provider`、`ai.ark.*` 配置已被 Pipeline provider adapter 复用；demo mode 目前表现为“无 key 自动 fallback”，后续可补显式 `demo_mode` 配置项。
+  - [x] 预留第二个 `openai_compatible` provider 配置结构
+  - 结论：现有 `ai.provider`、`ai.ark.*` 配置已被 Pipeline provider adapter 复用；新增 `ai.openai_compatible.*` 配置结构用于后续第二真实 provider adapter 联调。demo mode 目前表现为“无 key 自动 fallback”，后续可补显式 `demo_mode` 配置项。
 
 - [x] S3-1.5 接入至少一个真实 provider 的最小调用链路
   - [x] 如果使用已有 AI client，则包装为 Provider
@@ -153,13 +156,13 @@ Checkpoint 阶段仍由引擎和人工审批控制，不走 provider。
   - [x] prompt 中明确输出 JSON 字段
   - [x] prompt 中要求不得输出非 JSON 或需包裹可解析 JSON
 
-- [~] S3-2.3 建立输出结构校验
+- [x] S3-2.3 建立输出结构校验
   - [x] 校验 required fields
-  - [ ] 校验字段类型
+  - [x] 校验字段类型
   - [x] 校验空输出
   - [x] 校验 JSON 解析失败
   - [x] 输出不合法时记录错误并 fallback 或 fail
-  - 说明：本轮先做 required/empty/JSON parse 校验；字段类型细化留到下一批。
+  - 说明：字段类型由 PromptRegistry 中的 schema 定义驱动，字符串字段必须为 JSON string，数组字段必须为 JSON array；未知扩展字段暂不拦截。
 
 - [x] S3-2.4 改造 RequirementAnalysisHandler
   - [x] 构造需求分析输入
@@ -350,12 +353,21 @@ Checkpoint 阶段仍由引擎和人工审批控制，不走 provider。
   - [x] failed run
   - [x] completed delivery run
 
+- [x] S3-5.5 前端工作台消费聚合 API
+  - [x] `Workflows` 消费 PipelineRun 列表、timeline/current、AgentRun、Artifact、Delivery
+  - [x] `Workflows` 接入 start/pause/resume/terminate 操作
+  - [x] `Approvals` 消费 current/timeline，展示 pending checkpoint 和审批上下文
+  - [x] `Approvals` 接入 checkpoint approve/reject
+  - [x] `Delivery` 消费 deliveries、GitDelivery 详情和关联 timeline
+  - [x] 新增前端 Pipeline API client 与状态映射工具
+
 ### 7.3 验收标准
 
 - [x] 前端可以通过 timeline/current 判断页面主状态
 - [x] waiting approval 时能拿到 checkpoint 和审批动作提示
 - [x] delivery 完成后能拿到交付记录
 - [x] 测试覆盖关键状态
+- [x] Workflows / Approvals / Delivery 已从静态 Demo 数据升级为真实 API 数据
 
 ---
 
@@ -383,21 +395,27 @@ Checkpoint 阶段仍由引擎和人工审批控制，不走 provider。
   - [x] stage agent 化测试
   - [x] delivery API 测试
   - [x] timeline/current 聚合测试
+  - [x] pause/terminate 异步 runner 回归测试
 
-- [ ] S3-6.4 演示脚本核验
-  - [ ] 创建 PipelineRun
-  - [ ] start
-  - [ ] 到达方案审批
-  - [ ] approve
-  - [ ] 到达评审确认
-  - [ ] approve
-  - [ ] delivery 完成
-  - [ ] 查询 timeline/current/delivery
+- [x] S3-6.4 演示脚本核验
+  - [x] 创建 PipelineRun
+  - [x] start
+  - [x] 到达方案审批
+  - [x] reject 后回退方案阶段并携带原因
+  - [x] approve
+  - [x] 到达评审确认
+  - [x] approve
+  - [x] delivery 完成
+  - [x] 查询 timeline/current/delivery
 
 - [x] S3-6.5 更新 checklist
   - [x] 把已完成项勾选
   - [x] 标记仍未完成项
   - [x] 记录测试结果
+
+- [x] S3-6.6 前端构建验证
+  - [x] `pnpm --filter web build`
+  - [x] Workflows / Approvals / Delivery 类型检查通过
 
 ### 8.3 验收标准
 
@@ -406,6 +424,7 @@ Checkpoint 阶段仍由引擎和人工审批控制，不走 provider。
 - [x] demo mode 无外部 key 可跑通
 - [x] 如果配置真实 provider，错误可观测且不破坏数据
 - [x] 文档与实现状态一致
+- [x] 前端工作台可展示后端闭环数据
 
 ---
 

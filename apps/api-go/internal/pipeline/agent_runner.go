@@ -53,7 +53,7 @@ func (r *AgentRunner) Execute(ctx context.Context, stageContext StageContext, fa
 	if parseErr != nil {
 		return r.executeFallback(ctx, stageContext, fallback, spec, inputJSON, "json_parse_error: "+parseErr.Error(), &response)
 	}
-	if validationErr := validateAgentPayload(payload, spec.RequiredFields); validationErr != nil {
+	if validationErr := validateAgentPayload(payload, spec.RequiredFields, spec.FieldTypes); validationErr != nil {
 		return r.executeFallback(ctx, stageContext, fallback, spec, inputJSON, "schema_validation_error: "+validationErr.Error(), &response)
 	}
 
@@ -147,7 +147,7 @@ func decodeAgentJSON(content string) (map[string]any, error) {
 	return payload, nil
 }
 
-func validateAgentPayload(payload map[string]any, requiredFields []string) error {
+func validateAgentPayload(payload map[string]any, requiredFields []string, fieldTypes map[string]AgentFieldType) error {
 	for _, field := range requiredFields {
 		value, ok := payload[field]
 		if !ok {
@@ -161,6 +161,22 @@ func validateAgentPayload(payload map[string]any, requiredFields []string) error
 		}
 		if items, ok := value.([]any); ok && len(items) == 0 {
 			return fmt.Errorf("required field %q is empty", field)
+		}
+	}
+	for field, fieldType := range fieldTypes {
+		value, ok := payload[field]
+		if !ok || value == nil {
+			continue
+		}
+		switch fieldType {
+		case AgentFieldString:
+			if _, ok := value.(string); !ok {
+				return fmt.Errorf("field %q must be string", field)
+			}
+		case AgentFieldArray:
+			if _, ok := value.([]any); !ok {
+				return fmt.Errorf("field %q must be array", field)
+			}
 		}
 	}
 	return nil

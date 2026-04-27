@@ -15,8 +15,10 @@
 
 - 核验日期：2026-04-26（Asia/Shanghai）
 - 后端命令：`cd apps/api-go && go test ./...`
+- 前端命令：`pnpm --filter web build`
+- 真实环境 smoke：Ark / `doubao-seed-2-0-lite-260215` 端到端 Pipeline 主闭环通过
 - 结果：通过
-- 说明：该结果只代表当前基线可用；S3 实现完成后仍需重新执行完整验证。
+- 说明：本次核验覆盖后端测试、前端构建、真实 Ark AgentRun、checkpoint reject/approve 和 GitDelivery 查询。
 
 ---
 
@@ -32,6 +34,7 @@
 - [x] PipelineRun 聚合创建已事务化
 - [x] PipelineRun 生命周期 API 已存在
 - [x] start / pause / resume / terminate 已有状态校验
+- [x] pause / terminate 在异步 runner 中不会再被运行中阶段覆盖
 - [x] Checkpoint approve / reject 已存在
 - [x] 重复审批保护已补充
 - [x] reject 后可回退上一可执行阶段
@@ -46,17 +49,17 @@
 
 ### 2.2 当前已知缺口
 
-- [!] 真实 Agent Provider 已有最小 adapter，仍需真实 API Key 联调
-- [!] 至少两个模型提供方的可配置切换尚未完成
+- [x] 真实 Agent Provider 已通过 Ark Key 联调
+- [!] 至少两个模型提供方的真实 adapter 与运行时切换尚未完成
 - [x] Prompt Registry 已形成基础实现
-- [!] Agent 输出 JSON schema 字段类型校验仍需增强
+- [x] Agent 输出 JSON schema 字段类型校验已补充
 - [!] AgentRun token usage 真实统计仍需 provider client 支持
 - [x] GitDelivery 基础交付记录闭环已实现
 - [x] GitDelivery 查询 API 已实现
 - [x] timeline/current 已包含 delivery 和 nextAction
 - [x] Swagger/OpenAPI 已跟随新增接口更新
-- [!] 前端工作台尚未消费 timeline/current
-- [!] 前端工作流、审批、交付页面仍以静态 Demo 数据为主
+- [x] 前端工作台已消费 timeline/current/deliveries
+- [x] 前端工作流、审批、交付页面已接入真实 Pipeline 数据
 - [n/a] 页面圈选、热更新、MR 自动创建不属于本阶段主线
 
 ---
@@ -87,7 +90,7 @@
 
 - [x] deterministic provider 可运行
 - [x] 至少一个真实 provider 已接入或具备完整占位调用链路
-- [ ] 第二个 provider 的配置结构已预留
+- [x] 第二个 provider 的配置结构已预留
 - [x] provider 选择逻辑有测试
 - [x] fallback 逻辑有测试
 
@@ -134,6 +137,7 @@
 
 - [x] JSON 解析失败有错误记录
 - [x] schema 校验失败有错误记录
+- [x] schema 字段类型错误会触发 fallback
 - [x] provider 超时有错误记录
 - [x] fallback 被触发时可追踪原因
 - [x] 阶段失败不会留下不一致状态
@@ -240,6 +244,18 @@
 - [x] delivery ready 返回 review_delivery
 - [x] completed 返回 completed
 
+### 7.4 前端工作台
+
+- [x] Workflows 可展示 PipelineRun 列表
+- [x] Workflows 可展示 timeline 阶段进度
+- [x] Workflows 可展示 AgentRun、Artifact、Delivery 核心数据
+- [x] Workflows 可触发 start/pause/resume/terminate
+- [x] Approvals 可筛选 pending checkpoint
+- [x] Approvals 可展示审批上下文和最近产物
+- [x] Approvals 可调用 approve/reject
+- [x] Delivery 可展示 GitDelivery 列表
+- [x] Delivery 可展示单条 GitDelivery 详情、变更文件和验证摘要
+
 ---
 
 ## 8. API 与文档验证
@@ -279,21 +295,22 @@
 
 ### 9.2 演示链路手工验证
 
-- [ ] 创建 PipelineRun
-- [ ] 启动 PipelineRun
-- [ ] 自动执行需求分析
-- [ ] 自动执行方案设计
-- [ ] 到达方案审批 checkpoint
-- [ ] 查询 current 能看到 checkpoint
-- [ ] approve 后继续执行
-- [ ] 自动执行代码生成
-- [ ] 自动执行测试生成
-- [ ] 自动执行代码评审
-- [ ] 到达评审确认 checkpoint
-- [ ] approve 后执行 delivery
-- [ ] delivery 生成交付摘要
-- [ ] GitDelivery 可查询
-- [ ] timeline 展示完整阶段链路
+- [x] 创建 PipelineRun
+- [x] 启动 PipelineRun
+- [x] 自动执行需求分析
+- [x] 自动执行方案设计
+- [x] 到达方案审批 checkpoint
+- [x] 查询 current 能看到 checkpoint
+- [x] reject 后回退方案阶段并携带驳回原因
+- [x] approve 后继续执行
+- [x] 自动执行代码生成
+- [x] 自动执行测试生成
+- [x] 自动执行代码评审
+- [x] 到达评审确认 checkpoint
+- [x] approve 后执行 delivery
+- [x] delivery 生成交付摘要
+- [x] GitDelivery 可查询
+- [x] timeline 展示完整阶段链路
 
 ### 9.3 Demo Mode 验证
 
@@ -302,17 +319,25 @@
 - [x] deterministic provider 在 AgentRun 中可见
 - [x] fallback 原因可追踪
 
+### 9.4 前端构建验证
+
+- [x] 执行 `pnpm --filter web build`
+- [x] TypeScript 构建通过
+- [x] Vite 构建通过
+- [x] 仅存在 chunk size warning，无阻塞错误
+
 ---
 
 ## 10. 最终收尾标准
 
 本阶段可收尾的条件：
 
-- [ ] 所有范围内任务完成或明确标记延期
-- [ ] 高优先级 checklist 全部通过
+- [x] 所有范围内任务完成或明确标记延期
+- [x] 高优先级 checklist 全部通过
 - [x] `cd apps/api-go && go test ./...` 通过
+- [x] `pnpm --filter web build` 通过
 - [x] 无新增敏感信息泄漏风险
 - [x] 无默认高风险 Git 操作
 - [x] 文档已同步
-- [ ] 能按演示链路跑出完整 Pipeline timeline
+- [x] 能按演示链路跑出完整 Pipeline timeline
 - [x] 能展示 AgentRun 和 GitDelivery 的核心数据

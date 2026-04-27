@@ -139,6 +139,70 @@ func TestEngineRunCompletesAfterCheckpointApprovals(t *testing.T) {
 	}
 }
 
+func TestEngineStopsAfterInFlightStageWhenRunIsPaused(t *testing.T) {
+	repository := newTestRepository(t)
+	run := seedFullPipelineRun(t, repository)
+	ctx := context.Background()
+	engine := pipeline.NewEngine(repository, lifecycleExecutor{
+		onStage: func(ctx context.Context, stage model.StageRun) error {
+			if stage.StageKey == pipeline.StageRequirementAnalysis {
+				return repository.UpdatePipelineRunStatus(ctx, run.ID, model.PipelineRunPaused)
+			}
+			return nil
+		},
+	})
+
+	if err := engine.Run(ctx, run.ID); err != nil {
+		t.Fatalf("run engine: %v", err)
+	}
+	updatedRun, err := repository.GetPipelineRunByID(ctx, run.ID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if updatedRun.Status != model.PipelineRunPaused {
+		t.Fatalf("expected run to remain paused, got %s", updatedRun.Status)
+	}
+	nextStage, err := repository.GetStageRunByKey(ctx, run.ID, pipeline.StageSolutionDesign)
+	if err != nil {
+		t.Fatalf("get next stage: %v", err)
+	}
+	if nextStage.Status != model.StageRunPending {
+		t.Fatalf("expected next stage to stay pending, got %s", nextStage.Status)
+	}
+}
+
+func TestEngineStopsAfterInFlightStageWhenRunIsTerminated(t *testing.T) {
+	repository := newTestRepository(t)
+	run := seedFullPipelineRun(t, repository)
+	ctx := context.Background()
+	engine := pipeline.NewEngine(repository, lifecycleExecutor{
+		onStage: func(ctx context.Context, stage model.StageRun) error {
+			if stage.StageKey == pipeline.StageSolutionDesign {
+				return repository.UpdatePipelineRunStatus(ctx, run.ID, model.PipelineRunTerminated)
+			}
+			return nil
+		},
+	})
+
+	if err := engine.Run(ctx, run.ID); err != nil {
+		t.Fatalf("run engine: %v", err)
+	}
+	updatedRun, err := repository.GetPipelineRunByID(ctx, run.ID)
+	if err != nil {
+		t.Fatalf("get run: %v", err)
+	}
+	if updatedRun.Status != model.PipelineRunTerminated {
+		t.Fatalf("expected run to remain terminated, got %s", updatedRun.Status)
+	}
+	checkpointStage, err := repository.GetStageRunByKey(ctx, run.ID, pipeline.StageCheckpointDesign)
+	if err != nil {
+		t.Fatalf("get checkpoint stage: %v", err)
+	}
+	if checkpointStage.Status != model.StageRunPending {
+		t.Fatalf("expected checkpoint stage to stay pending, got %s", checkpointStage.Status)
+	}
+}
+
 func newTestRepository(t *testing.T) *repo.Repository {
 	t.Helper()
 	databasePath := filepath.Join(t.TempDir(), "pipeline-test.db")
@@ -240,4 +304,37 @@ func hasArtifactType(items []model.Artifact, artifactType model.ArtifactType) bo
 		}
 	}
 	return false
+}
+
+type lifecycleExecutor struct {
+	onStage func(context.Context, model.StageRun) error
+}
+
+func (e lifecycleExecutor) Execute(ctx context.Context, stageContext pipeline.StageContext) (pipeline.StageExecutionResult, error) {
+	if e.onStage != nil {
+		if err := e.onStage(ctx, stageContext.Stage); err != nil {
+			return pipeline.StageExecutionResult{}, err
+		}
+	}
+	artifactType := model.ArtifactStructuredRequirement
+	switch stageContext.Stage.StageKey {
+	case pipeline.StageSolutionDesign:
+		artifactType = model.ArtifactSolutionDesign
+	case pipeline.StageCodeGeneration:
+		artifactType = model.ArtifactCodeDiff
+	case pipeline.StageTestGeneration:
+		artifactType = model.ArtifactTestReport
+	case pipeline.StageCodeReview:
+		artifactType = model.ArtifactReviewReport
+	case pipeline.StageDelivery:
+		artifactType = model.ArtifactDeliverySummary
+	}
+	outputJSON := `{"summary":"lifecycle test"}`
+	return pipeline.StageExecutionResult{
+		ArtifactType: artifactType,
+		Title:        "Lifecycle test",
+		ContentText:  "Lifecycle test",
+		ContentJSON:  outputJSON,
+		OutputJSON:   outputJSON,
+	}, nil
 }

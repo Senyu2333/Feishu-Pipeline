@@ -1,163 +1,308 @@
+import { useEffect, useMemo, useState } from 'react'
+import { Alert, Button, Card, Empty, Input, Skeleton, Tag, Timeline, message } from 'antd'
+import {
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  FileSearchOutlined,
+  ReloadOutlined,
+} from '@ant-design/icons'
 import Sidebar from '../components/Sidebar'
 import {
-  Card,
-  Button,
-  Input,
-  Timeline,
-  Progress,
-  Avatar,
-  Badge,
-  Space,
-} from 'antd'
-import {
-  UserAddOutlined,
-  FilePdfOutlined,
-  CloseOutlined,
-  EditOutlined,
-  CheckCircleOutlined,
-} from '@ant-design/icons'
+  type Artifact,
+  type PipelineRunCurrent,
+  type PipelineRunTimeline,
+  approveCheckpoint,
+  checkpointLabel,
+  fetchPipelineCurrent,
+  fetchPipelineRuns,
+  fetchPipelineTimeline,
+  formatDateTime,
+  latestArtifact,
+  nextActionLabel,
+  parseJSON,
+  rejectCheckpoint,
+  runStatusMeta,
+  stageLabel,
+  stageStatusMeta,
+} from '../lib/pipeline'
 
-const historyItems = [
-  {
-    color: '#0066ff',
-    title: 'Document Generated',
-    time: 'Today, 09:12 AM • AI System',
-    desc: 'Initial draft generated based on requirement Alpha-01.',
-  },
-  {
-    color: '#dbe4ee',
-    title: 'Initial Screening',
-    time: 'Today, 10:45 AM • Sarah Chen',
-    desc: 'Formatting checked. Content looks solid. Passed to senior review.',
-  },
-  {
-    color: '#faad14',
-    title: 'Resource Alert',
-    time: 'Today, 11:05 AM • System Monitor',
-    desc: 'GPU cluster 4 experiencing 85% load. Verification may be delayed.',
-    alert: true,
-  },
-]
+interface ApprovalItem {
+  current: PipelineRunCurrent
+}
+
+const sidebarWidth = 80
 
 export default function Approvals() {
-  // 左侧导航固定 80px
-  const sidebarWidth = 80
+  const [items, setItems] = useState<ApprovalItem[]>([])
+  const [selectedRunId, setSelectedRunId] = useState('')
+  const [timeline, setTimeline] = useState<PipelineRunTimeline | null>(null)
+  const [comment, setComment] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [loadingTimeline, setLoadingTimeline] = useState(false)
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [error, setError] = useState('')
+
+  const selected = useMemo(
+    () => items.find(item => item.current.run.id === selectedRunId) ?? items[0],
+    [items, selectedRunId],
+  )
+  const reviewArtifact = latestArtifact(timeline ?? undefined)
+  const reviewText = reviewArtifact ? artifactSummary(reviewArtifact) : ''
+
+  const loadApprovals = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const runs = await fetchPipelineRuns()
+      const currents = await Promise.all(
+        runs.slice(0, 30).map(run => fetchPipelineCurrent(run.id).catch(() => null)),
+      )
+      const pending = currents
+        .filter((item): item is PipelineRunCurrent => Boolean(item?.checkpoint && item.checkpoint.status === 'pending'))
+        .map(current => ({ current }))
+      setItems(pending)
+      setSelectedRunId(prev => pending.some(item => item.current.run.id === prev) ? prev : pending[0]?.current.run.id || '')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加载审批列表失败')
+      setItems([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadTimeline = async (runId: string) => {
+    if (!runId) {
+      setTimeline(null)
+      return
+    }
+    setLoadingTimeline(true)
+    try {
+      setTimeline(await fetchPipelineTimeline(runId))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加载审批上下文失败')
+      setTimeline(null)
+    } finally {
+      setLoadingTimeline(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadApprovals()
+  }, [])
+
+  useEffect(() => {
+    void loadTimeline(selectedRunId)
+    setComment('')
+  }, [selectedRunId])
+
+  const decide = async (decision: 'approve' | 'reject') => {
+    const checkpoint = selected?.current.checkpoint
+    if (!checkpoint) return
+    setActionLoading(decision)
+    try {
+      if (decision === 'approve') {
+        await approveCheckpoint(checkpoint.id, comment)
+      } else {
+        await rejectCheckpoint(checkpoint.id, comment)
+      }
+      message.success(decision === 'approve' ? '已审批通过' : '已驳回重做')
+      await loadApprovals()
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '审批失败')
+    } finally {
+      setActionLoading(null)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background">
       <Sidebar />
-      <main className="h-screen overflow-y-auto p-6 transition-all duration-300" style={{ marginLeft: `${sidebarWidth}px` }}>
-        <div className="flex justify-between items-start mb-5">
+      <main className="h-screen overflow-hidden p-5 transition-all duration-300" style={{ marginLeft: `${sidebarWidth}px` }}>
+        <div className="mb-4 flex items-start justify-between">
           <div>
-            <div className="text-sm text-on-surface-variant mb-1">
-              Approvals <span className="text-on-surface/30">›</span>{' '}
-              <span className="text-primary font-medium">Requirement #AL-9042</span>
-            </div>
-            <h1 className="text-2xl font-bold text-on-surface m-0 mb-1">Manual Review & Approval</h1>
-            <p className="text-sm text-on-surface-variant m-0">
-              Review the AI-generated feasibility report for Project Alpha - Q4 Delivery
-            </p>
+            <h1 className="m-0 text-2xl font-bold text-on-surface">人工审批</h1>
+            <p className="m-0 mt-1 text-sm text-on-surface-variant">Human-in-the-Loop Checkpoints</p>
           </div>
-          <Space>
-            <Button icon={<UserAddOutlined />} size="large" className="!rounded-lg">
-              Assign Reviewer
-            </Button>
-            <Button icon={<FilePdfOutlined />} size="large" className="!rounded-lg">
-              Export PDF
-            </Button>
-          </Space>
+          <Button icon={<ReloadOutlined />} onClick={loadApprovals} loading={loading}>
+            刷新
+          </Button>
         </div>
 
-        <div className="grid grid-cols-[1fr_360px] gap-5">
-          <Card className="!rounded-xl !shadow-sm">
-            <div className="flex items-center justify-between px-4 py-3 bg-surface-container-low border-b border-outline-variant">
-              <div className="flex items-center gap-3">
-                <span className="material-symbols-outlined text-on-surface-variant">menu</span>
-                <span className="text-sm font-medium text-on-surface">Feasibility_Report_v2.docx</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="material-symbols-outlined text-on-surface-variant cursor-pointer">zoom_out</span>
-                <span className="text-sm text-on-surface-variant min-w-12 text-center">100%</span>
-                <span className="material-symbols-outlined text-on-surface-variant cursor-pointer">zoom_in</span>
+        {error ? <Alert className="mb-4" type="error" showIcon message={error} /> : null}
+
+        <div className="grid h-[calc(100%-72px)] grid-cols-[340px_1fr_360px] gap-4 overflow-hidden">
+          <aside className="overflow-y-auto rounded-lg border border-outline-variant bg-surface-container-lowest">
+            <div className="border-b border-outline-variant px-4 py-3">
+              <div className="text-sm font-semibold text-on-surface">待审批队列</div>
+              <div className="text-xs text-on-surface-variant">{items.length} 个 checkpoint</div>
+            </div>
+            <div className="p-3">
+              {loading ? <Skeleton active paragraph={{ rows: 8 }} /> : null}
+              {!loading && items.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无待审批" /> : null}
+              <div className="space-y-2">
+                {items.map(item => {
+                  const { run, checkpoint, nextAction } = item.current
+                  const active = run.id === selectedRunId
+                  return (
+                    <button
+                      key={run.id}
+                      type="button"
+                      onClick={() => setSelectedRunId(run.id)}
+                      className={`w-full rounded-lg border p-3 text-left transition ${
+                        active ? 'border-primary bg-primary/5' : 'border-outline-variant bg-white hover:border-primary/50'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-on-surface">{run.title}</div>
+                          <div className="mt-1 text-xs text-on-surface-variant">{checkpointLabel(checkpoint?.checkpointType)}</div>
+                        </div>
+                        <Tag color="warning">{nextActionLabel(nextAction)}</Tag>
+                      </div>
+                      <div className="mt-3 flex items-center justify-between text-xs text-on-surface-variant">
+                        <span>{stageLabel(run.currentStageKey)}</span>
+                        <span>{formatDateTime(run.updatedAt)}</span>
+                      </div>
+                    </button>
+                  )
+                })}
               </div>
             </div>
-            <div className="px-10 py-8">
-              <div className="flex items-center gap-4 mb-7">
-                <Avatar size={48} className="!bg-surface-container-high !text-primary" icon={<span className="material-symbols-outlined">star</span>} />
-                <div className="text-right flex-1">
-                  <div className="text-xs font-semibold text-gray-400 tracking-wide">GENERATED DOCUMENT</div>
-                  <div className="text-sm text-on-surface font-medium">ID: REQ-9042-ALPHA</div>
-                </div>
-              </div>
+          </aside>
 
-              <h2 className="text-xl font-bold text-on-surface mt-6 mb-4">Abstract</h2>
-              <p className="text-sm text-on-surface-variant leading-relaxed mb-4">
-                This feasibility report outlines the necessary requirements for the integration of high-level LLM agents into the existing Project Alpha infrastructure.
-              </p>
-
-              <h2 className="text-xl font-bold text-on-surface mt-6 mb-4">Technical Specifications</h2>
-              <ul className="list-disc pl-5 mb-5 space-y-2 text-sm text-on-surface-variant">
-                <li>Integration with existing REST APIs through a secure gateway layer.</li>
-                <li>Implementation of vector database indexing for real-time retrieval.</li>
-                <li>Estimated GPU resource allocation: 400 TFLOPS across 8 clusters.</li>
-              </ul>
-
-              <div className="bg-surface-container-low rounded-xl p-5 my-5">
-                <div className="flex justify-between items-center mb-3">
-                  <span className="text-xs font-bold text-primary tracking-wide">AI CONFIDENCE SCORE</span>
-                  <span className="text-lg font-bold text-on-surface">92%</span>
-                </div>
-                <Progress percent={92} strokeColor="#0066ff" trailColor="#dbe8f6" showInfo={false} />
-              </div>
-            </div>
-          </Card>
-
-          <aside className="flex flex-col gap-4">
-            <Card className="!rounded-xl !shadow-sm" title="Review Action">
-              <div className="text-xs font-semibold text-on-surface-variant tracking-wide mb-2">COMMENT & FEEDBACK</div>
-              <Input.TextArea placeholder="Enter your detailed feedback here..." rows={4} className="!bg-surface-container-low !border-outline-variant !rounded-lg mb-3" />
-              <div className="grid grid-cols-2 gap-2 mb-3">
-                <Button icon={<CloseOutlined />} className="!text-red-500 !border-red-200 !bg-red-50 !rounded-lg">
-                  Reject
-                </Button>
-                <Button icon={<EditOutlined />} className="!text-primary !border-primary/20 !bg-primary/5 !rounded-lg">
-                  Revision
-                </Button>
-              </div>
-              <Button type="primary" icon={<CheckCircleOutlined />} block className="!h-11 !rounded-xl !text-sm !font-semibold">
-                Approve Document
-              </Button>
-            </Card>
-
-            <Card className="!rounded-xl !shadow-sm" title="Review History" extra={<Badge count="3 Events" className="!bg-surface-container-high !text-primary !font-medium" />}>
-              <Timeline className="pt-1" items={historyItems.map((item, idx) => ({
-                key: idx,
-                color: item.color,
-                children: (
-                  <div className="p-3 bg-surface-container-low rounded-lg">
-                    <div className="font-semibold text-sm text-on-surface">{item.title}</div>
-                    <div className="text-xs text-on-surface-variant mt-0.5">{item.time}</div>
-                    {item.alert ? (
-                      <div className="text-xs text-orange-700 bg-orange-50 border border-orange-200 p-2 rounded mt-2">{item.desc}</div>
-                    ) : (
-                      <div className="text-xs text-on-surface-variant bg-white p-2 rounded mt-2">{item.desc}</div>
-                    )}
+          <section className="min-w-0 overflow-y-auto">
+            {!selected ? (
+              <Card className="!h-full !rounded-lg">
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              </Card>
+            ) : (
+              <div className="space-y-4">
+                <Card className="!rounded-lg">
+                  <div className="mb-4 flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="mb-2 flex flex-wrap gap-2">
+                        <Tag color={runStatusMeta(selected.current.run.status).color}>{runStatusMeta(selected.current.run.status).label}</Tag>
+                        <Tag color="warning">{checkpointLabel(selected.current.checkpoint?.checkpointType)}</Tag>
+                      </div>
+                      <h2 className="m-0 truncate text-xl font-bold text-on-surface">{selected.current.run.title}</h2>
+                      <p className="m-0 mt-2 text-sm leading-6 text-on-surface-variant">{selected.current.run.requirementText}</p>
+                    </div>
+                    <FileSearchOutlined className="mt-1 text-2xl text-primary" />
                   </div>
-                ),
-              }))} />
+                  <div className="grid grid-cols-3 gap-3">
+                    <InfoPill label="当前阶段" value={stageLabel(selected.current.stage?.stageKey)} />
+                    <InfoPill label="目标分支" value={selected.current.run.targetBranch} />
+                    <InfoPill label="工作分支" value={selected.current.run.workBranch} />
+                  </div>
+                </Card>
+
+                <Card className="!rounded-lg" title={reviewArtifact?.title || '审批产物'}>
+                  {loadingTimeline ? <Skeleton active paragraph={{ rows: 6 }} /> : null}
+                  {!loadingTimeline && reviewArtifact ? (
+                    <div className="rounded-lg border border-outline-variant bg-surface-container-lowest p-4">
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <Tag>{reviewArtifact.artifactType}</Tag>
+                        <span className="text-xs text-on-surface-variant">{formatDateTime(reviewArtifact.createdAt)}</span>
+                      </div>
+                      <p className="m-0 whitespace-pre-wrap text-sm leading-6 text-on-surface">{reviewText || reviewArtifact.contentText}</p>
+                    </div>
+                  ) : null}
+                  {!loadingTimeline && !reviewArtifact ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} /> : null}
+                </Card>
+
+                <Card className="!rounded-lg" title="阶段状态">
+                  <div className="grid grid-cols-2 gap-2">
+                    {(timeline?.stages ?? []).map(stage => {
+                      const meta = stageStatusMeta(stage.status)
+                      return (
+                        <div key={stage.id} className="flex items-center justify-between rounded-lg border border-outline-variant bg-white px-3 py-2">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold text-on-surface">{stageLabel(stage.stageKey)}</div>
+                            <div className="text-xs text-on-surface-variant">attempt {stage.attempt}</div>
+                          </div>
+                          <Tag color={meta.color}>{meta.label}</Tag>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </Card>
+              </div>
+            )}
+          </section>
+
+          <aside className="overflow-y-auto">
+            <Card className="!rounded-lg" title="审批操作">
+              {selected?.current.checkpoint ? (
+                <>
+                  <div className="mb-3 rounded-lg bg-surface-container-low p-3">
+                    <div className="text-xs font-semibold text-on-surface-variant">CHECKPOINT</div>
+                    <div className="mt-1 text-sm font-semibold text-on-surface">{selected.current.checkpoint.id}</div>
+                  </div>
+                  <Input.TextArea
+                    value={comment}
+                    onChange={event => setComment(event.target.value)}
+                    rows={5}
+                    placeholder="填写审批意见"
+                    className="mb-3"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      danger
+                      icon={<CloseCircleOutlined />}
+                      loading={actionLoading === 'reject'}
+                      onClick={() => decide('reject')}
+                    >
+                      驳回
+                    </Button>
+                    <Button
+                      type="primary"
+                      icon={<CheckCircleOutlined />}
+                      loading={actionLoading === 'approve'}
+                      onClick={() => decide('approve')}
+                    >
+                      通过
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              )}
             </Card>
 
-            <div className="flex items-center gap-3 bg-white rounded-xl p-3 shadow-sm">
-              <Avatar size="small" className="!bg-primary">A</Avatar>
-              <div className="flex-1">
-                <div className="text-xs text-on-surface-variant">Currently reviewing</div>
-                <div className="text-sm font-semibold text-on-surface">You (Admin)</div>
-              </div>
-              <Badge status="success" />
-            </div>
+            <Card className="!mt-4 !rounded-lg" title="审批记录">
+              <Timeline
+                items={(timeline?.checkpoints ?? []).map(checkpoint => ({
+                  key: checkpoint.id,
+                  color: checkpoint.status === 'approved' ? 'green' : checkpoint.status === 'rejected' ? 'red' : 'orange',
+                  children: (
+                    <div>
+                      <div className="text-sm font-semibold text-on-surface">{checkpointLabel(checkpoint.checkpointType)}</div>
+                      <div className="text-xs text-on-surface-variant">{checkpoint.status} · {checkpoint.decision || 'pending'}</div>
+                      {checkpoint.comment ? <div className="mt-1 rounded bg-surface-container-low p-2 text-xs text-on-surface-variant">{checkpoint.comment}</div> : null}
+                    </div>
+                  ),
+                }))}
+              />
+              {timeline?.checkpoints.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} /> : null}
+            </Card>
           </aside>
         </div>
       </main>
     </div>
   )
+}
+
+function InfoPill({ label, value }: { label: string; value?: string }) {
+  return (
+    <div className="rounded-lg border border-outline-variant bg-white p-3">
+      <div className="text-xs font-semibold text-on-surface-variant">{label}</div>
+      <div className="mt-1 truncate text-sm font-semibold text-on-surface">{value || '-'}</div>
+    </div>
+  )
+}
+
+function artifactSummary(artifact: Artifact): string {
+  const payload = parseJSON<Record<string, unknown>>(artifact.contentJson)
+  const summary = payload && typeof payload.summary === 'string' ? payload.summary : ''
+  return summary || artifact.contentText || ''
 }

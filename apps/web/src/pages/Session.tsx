@@ -64,9 +64,24 @@ export default function Session() {
   const sendMessage = useCallback(async (content: string) => {
     if (!content.trim() || sendingRef.current) return
 
+    const triggerAutoPublishCheck = async (assistantContent: string) => {
+      if (!sessionId || !assistantContent.trim()) return
+      try {
+        await fetch(`/api/sessions/${sessionId}/auto-publish-check`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ content: assistantContent }),
+        })
+      } catch (err) {
+        console.error('Failed to run auto publish check:', err)
+      }
+    }
+
     // 立即更新 ref，避免并发问题
     sendingRef.current = true
     setSending(true)
+    void triggerAutoPublishCheck(content)
 
     try {
       // 乐观渲染：立即把用户消息 + loading 气泡追加到本地
@@ -159,6 +174,7 @@ export default function Session() {
           ],
         }
       })
+
     } catch (err) {
       console.error('Failed to send message:', err)
       setSession(prev => {

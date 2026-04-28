@@ -480,6 +480,8 @@ func (r *Repository) GetOpenAPISpec(ctx context.Context, id string) (model.OpenA
 	var spec model.OpenAPISpec
 	err := r.db.WithContext(ctx).First(&spec, "id = ?", id).Error
 	return spec, err
+}
+
 func (r *Repository) seedPipelineTemplatesTx(ctx context.Context, tx *gorm.DB) error {
 	var count int64
 	if err := tx.WithContext(ctx).Model(&model.PipelineTemplate{}).Count(&count).Error; err != nil {

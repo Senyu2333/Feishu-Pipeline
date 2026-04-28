@@ -112,7 +112,7 @@ export default function Workflows() {
     }
     if (redirectedRunIdRef.current === timeline.run.id) return
     redirectedRunIdRef.current = timeline.run.id
-    window.location.assign(`/approvals?runId=${encodeURIComponent(timeline.run.id)}`)
+    window.location.assign(`/approvals/${encodeURIComponent(timeline.run.id)}`)
   }, [timeline?.run.id, timeline?.run.status])
 
   const refreshAll = async () => {

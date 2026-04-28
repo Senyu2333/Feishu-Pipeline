@@ -7,8 +7,8 @@ import lark from '@larksuiteoapi/node-sdk'
 import axios from 'axios'
 
 // 飞书应用配置
-const FEISHU_APP_ID = process.env.FEISHU_APP_ID ?? 'cli_a954fa893fb85bc6'
-const FEISHU_APP_SECRET = process.env.FEISHU_APP_SECRET ?? 'aYDUH3soLMlwONsU262qpcziZmjVDwOe'
+const FEISHU_APP_ID = process.env.FEISHU_APP_ID ?? ''
+const FEISHU_APP_SECRET = process.env.FEISHU_APP_SECRET ?? ''
 
 // 验证配置
 if (!FEISHU_APP_ID || !FEISHU_APP_SECRET) {
@@ -263,3 +263,212 @@ export async function sendMessage(
   return response.data
 }
 
+/**
+ * 创建多维表格
+ * @see https://open.feishu.cn/document/server-docs/docs/bitable-v1/app/create
+ *
+ * @param name - 多维表格名称
+ * @param folderToken - 父文件夹 Token（可选）
+ */
+export async function createBitableApp(
+  name: string,
+  folderToken?: string
+): Promise<unknown> {
+  const tokenRes = await axios.post(
+    'https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal',
+    { app_id: FEISHU_APP_ID, app_secret: FEISHU_APP_SECRET }
+  )
+  const accessToken = tokenRes.data.app_access_token
+
+  const response = await axios.post(
+    'https://open.feishu.cn/open-apis/bitable/v1/apps',
+    {
+      name,
+      folder_token: folderToken,
+      time_zone: 'Asia/Shanghai',
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+    }
+  )
+
+  return response.data
+}
+
+/**
+ * 获取数据表列表
+ * @see https://open.feishu.cn/document/server-docs/docs/bitable-v1/app-table/list
+ *
+ * @param appToken - 多维表格 App Token
+ */
+export async function listBitableTables(appToken: string): Promise<unknown> {
+  const tokenRes = await axios.post(
+    'https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal',
+    { app_id: FEISHU_APP_ID, app_secret: FEISHU_APP_SECRET }
+  )
+  const accessToken = tokenRes.data.app_access_token
+
+  const response = await axios.get(
+    `https://open.feishu.cn/open-apis/bitable/v1/apps/${appToken}/tables`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    }
+  )
+
+  return response.data
+}
+
+/**
+ * 创建数据表
+ * @see https://open.feishu.cn/document/server-docs/docs/bitable-v1/app-table/create
+ *
+ * @param appToken - 多维表格 App Token
+ * @param name - 数据表名称
+ */
+export async function createBitableTable(
+  appToken: string,
+  name: string
+): Promise<unknown> {
+  const tokenRes = await axios.post(
+    'https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal',
+    { app_id: FEISHU_APP_ID, app_secret: FEISHU_APP_SECRET }
+  )
+  const accessToken = tokenRes.data.app_access_token
+
+  const response = await axios.post(
+    `https://open.feishu.cn/open-apis/bitable/v1/apps/${appToken}/tables`,
+    { name },
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+    }
+  )
+
+  return response.data
+}
+
+/**
+ * 获取记录列表
+ * @see https://open.feishu.cn/document/server-docs/docs/bitable-v1/app-table-record/list
+ *
+ * @param appToken - 多维表格 App Token
+ * @param tableId - 数据表 ID
+ */
+export async function listBitableRecords(
+  appToken: string,
+  tableId: string,
+  pageSize: number = 100,
+  pageToken?: string
+): Promise<unknown> {
+  const tokenRes = await axios.post(
+    'https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal',
+    { app_id: FEISHU_APP_ID, app_secret: FEISHU_APP_SECRET }
+  )
+  const accessToken = tokenRes.data.app_access_token
+
+  const params: any = { page_size: pageSize }
+  if (pageToken) params.page_token = pageToken
+
+  const response = await axios.get(
+    `https://open.feishu.cn/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      params,
+    }
+  )
+
+  return response.data
+}
+
+/**
+ * 创建或更新记录
+ * @see https://open.feishu.cn/document/server-docs/docs/bitable-v1/app-table-record/create
+ * @see https://open.feishu.cn/document/server-docs/docs/bitable-v1/app-table-record/update
+ *
+ * @param appToken - 多维表格 App Token
+ * @param tableId - 数据表 ID
+ * @param fields - 记录字段
+ * @param recordId - 记录 ID（可选，不传则创建新记录，传则更新）
+ */
+export async function upsertBitableRecord(
+  appToken: string,
+  tableId: string,
+  fields: Record<string, any>,
+  recordId?: string
+): Promise<unknown> {
+  const tokenRes = await axios.post(
+    'https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal',
+    { app_id: FEISHU_APP_ID, app_secret: FEISHU_APP_SECRET }
+  )
+  const accessToken = tokenRes.data.app_access_token
+
+  const url = recordId
+    ? `https://open.feishu.cn/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records/${recordId}`
+    : `https://open.feishu.cn/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records`
+
+  const method = recordId ? 'PUT' : 'POST'
+  const response = await axios({
+    method,
+    url,
+    data: { fields },
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json; charset=utf-8',
+    },
+  })
+
+  return response.data
+}
+
+/**
+ * 批量创建或更新记录
+ * @see https://open.feishu.cn/document/server-docs/docs/bitable-v1/app-table-record/batch_create
+ * @see https://open.feishu.cn/document/server-docs/docs/bitable-v1/app-table-record/batch_update
+ *
+ * @param appToken - 多维表格 App Token
+ * @param tableId - 数据表 ID
+ * @param records - 记录数组（每条包含 fields 和可选的 record_id）
+ */
+export async function batchUpsertBitableRecords(
+  appToken: string,
+  tableId: string,
+  records: Array<{ fields: Record<string, any>; record_id?: string }>
+): Promise<unknown> {
+  const tokenRes = await axios.post(
+    'https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal',
+    { app_id: FEISHU_APP_ID, app_secret: FEISHU_APP_SECRET }
+  )
+  const accessToken = tokenRes.data.app_access_token
+
+  // 分批处理，每批最多 10 条
+  const results: any[] = []
+  const batchSize = 10
+
+  for (let i = 0; i < records.length; i += batchSize) {
+    const batch = records.slice(i, i + batchSize)
+    const hasExistingRecords = batch.some(r => r.record_id)
+
+    const url = `https://open.feishu.cn/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records`
+
+    const response = await axios({
+      method: 'POST',
+      url,
+      data: { records: batch },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+    })
+
+    results.push(response.data)
+  }
+
+  return results
+}

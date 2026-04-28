@@ -64,19 +64,21 @@ type Department struct {
 }
 
 type Config struct {
-	Enabled            bool
-	AppID              string
-	AppSecret          string
-	RedirectURL        string
-	OpenBaseURL        string
-	BotName            string
-	ReceiveIDType      string
-	DocFolderToken     string
-	BitableName        string
-	BitableFolderToken string
-	BitableAppToken    string
-	BitableTableID     string
-	BaseURL            string
+	Enabled              bool
+	AppID                string
+	AppSecret            string
+	RedirectURL          string
+	OpenBaseURL          string
+	BotName              string
+	ReceiveIDType        string
+	DocFolderToken       string
+	BitableName          string
+	BitableFolderToken   string
+	BitableAppToken      string
+	BitableTableID       string
+	BitableTemplateToken string
+	BaseURL              string
+	OAuthScope           string
 }
 
 type TaskRecordResult struct {
@@ -115,6 +117,10 @@ func (c *Client) Enabled() bool {
 
 func (c *Client) AppID() string {
 	return c.cfg.AppID
+}
+
+func (c *Client) OAuthScope() string {
+	return c.cfg.OAuthScope
 }
 
 func (c *Client) GetAppAccessToken(ctx context.Context) (string, error) {
@@ -293,7 +299,7 @@ func (c *Client) ListUserDepartments(ctx context.Context, userAccessToken string
 		userIDType = "user_id"
 	}
 
-	path := fmt.Sprintf("/open-apis/contact/v3/users/%s?user_id_type=%s&department_id_type=department_id&user_fields=department_path,department_ids,name,status,email,mobile", url.PathEscape(userIdentifier), url.QueryEscape(userIDType))
+	path := fmt.Sprintf("/open-apis/contact/v3/users/%s?user_id_type=%s&department_id_type=department_id&user_fields=department_path,department_ids,name", url.PathEscape(userIdentifier), url.QueryEscape(userIDType))
 	var response struct {
 		Code int    `json:"code"`
 		Msg  string `json:"msg"`
@@ -329,7 +335,7 @@ func (c *Client) ListUserDepartments(ctx context.Context, userAccessToken string
 		return nil, err
 	}
 	if response.Code != 0 {
-		return nil, fmt.Errorf("get user profile for departments failed: %s", response.Msg)
+		return nil, fmt.Errorf("get user profile for departments failed (code=%d): %s", response.Code, response.Msg)
 	}
 
 	orderedDepartmentIDs := make([]string, 0, len(response.Data.User.DepartmentIDs))
@@ -1045,47 +1051,10 @@ func (c *Client) openAPIURL(path string) string {
 	return base + path
 }
 
-func (c *Client) doJSON(req *http.Request, target any) error {
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode >= http.StatusBadRequest {
-		return fmt.Errorf("feishu api request failed: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(raw)))
-	}
-	if err := json.Unmarshal(raw, target); err != nil {
-		return fmt.Errorf("decode feishu api response: %w", err)
-	}
-	return nil
+type BitableRecord struct {
+	Fields map[string]any `json:"fields"`
 }
 
-func (c *Client) doJSONWithToken(ctx context.Context, method string, path string, token string, payload any, target any) error {
-	var body io.Reader
-	if payload != nil {
-		raw, err := json.Marshal(payload)
-		if err != nil {
-			return err
-		}
-		body = bytes.NewReader(raw)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, c.openAPIURL(path), body)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-
-	return c.doJSON(req, target)
-}
-
-// CopyBitableTemplate 复制多维表格模板，返回新表格的 app_token
 func (c *Client) CopyBitableTemplate(ctx context.Context, templateAppToken string) (string, error) {
 	token, err := c.GetAppAccessToken(ctx)
 	if err != nil {
@@ -1124,7 +1093,6 @@ func (c *Client) CopyBitableTemplate(ctx context.Context, templateAppToken strin
 	return resp.Data.App.AppToken, nil
 }
 
-// GetBitableTableID 获取多维表格第一个数据表的 table_id
 func (c *Client) GetBitableTableID(ctx context.Context, appToken string) (string, error) {
 	token, err := c.GetAppAccessToken(ctx)
 	if err != nil {
@@ -1160,12 +1128,6 @@ func (c *Client) GetBitableTableID(ctx context.Context, appToken string) (string
 	return resp.Data.Items[0].TableID, nil
 }
 
-// BitableRecord 飞书多维表格单条记录
-type BitableRecord struct {
-	Fields map[string]any `json:"fields"`
-}
-
-// BatchCreateBitableRecords 批量写入多维表格记录，返回各记录的 record_id
 func (c *Client) BatchCreateBitableRecords(ctx context.Context, appToken, tableID string, records []BitableRecord) ([]string, error) {
 	token, err := c.GetAppAccessToken(ctx)
 	if err != nil {
@@ -1203,6 +1165,50 @@ func (c *Client) BatchCreateBitableRecords(ctx context.Context, appToken, tableI
 		ids[i] = r.RecordID
 	}
 	return ids, nil
+}
+
+func (c *Client) BitableTemplateToken() string {
+	return c.cfg.BitableTemplateToken
+}
+
+func (c *Client) doJSON(req *http.Request, target any) error {
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		return fmt.Errorf("feishu api request failed: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+	if err := json.Unmarshal(raw, target); err != nil {
+		return fmt.Errorf("decode feishu api response: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) doJSONWithToken(ctx context.Context, method string, path string, token string, payload any, target any) error {
+	var body io.Reader
+	if payload != nil {
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			return err
+		}
+		body = bytes.NewReader(raw)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, c.openAPIURL(path), body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+	return c.doJSON(req, target)
 }
 
 func stringValue(value *string) string {

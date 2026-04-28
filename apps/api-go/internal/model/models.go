@@ -56,9 +56,216 @@ const (
 	TaskDone       TaskStatus = "done"
 )
 
+type PipelineRunStatus string
+
+const (
+	PipelineRunDraft           PipelineRunStatus = "draft"
+	PipelineRunQueued          PipelineRunStatus = "queued"
+	PipelineRunRunning         PipelineRunStatus = "running"
+	PipelineRunWaitingApproval PipelineRunStatus = "waiting_approval"
+	PipelineRunPaused          PipelineRunStatus = "paused"
+	PipelineRunFailed          PipelineRunStatus = "failed"
+	PipelineRunCompleted       PipelineRunStatus = "completed"
+	PipelineRunTerminated      PipelineRunStatus = "terminated"
+)
+
+type StageType string
+
+const (
+	StageTypeAnalysis   StageType = "analysis"
+	StageTypeDesign     StageType = "design"
+	StageTypeCheckpoint StageType = "checkpoint"
+	StageTypeCodegen    StageType = "codegen"
+	StageTypeTest       StageType = "test"
+	StageTypeReview     StageType = "review"
+	StageTypeDelivery   StageType = "delivery"
+)
+
+type StageRunStatus string
+
+const (
+	StageRunPending         StageRunStatus = "pending"
+	StageRunQueued          StageRunStatus = "queued"
+	StageRunRunning         StageRunStatus = "running"
+	StageRunWaitingApproval StageRunStatus = "waiting_approval"
+	StageRunSucceeded       StageRunStatus = "succeeded"
+	StageRunFailed          StageRunStatus = "failed"
+	StageRunSkipped         StageRunStatus = "skipped"
+)
+
+type ArtifactType string
+
+const (
+	ArtifactStructuredRequirement ArtifactType = "structured_requirement"
+	ArtifactSolutionDesign        ArtifactType = "solution_design"
+	ArtifactCodeDiff              ArtifactType = "code_diff"
+	ArtifactTestReport            ArtifactType = "test_report"
+	ArtifactReviewReport          ArtifactType = "review_report"
+	ArtifactDeliverySummary       ArtifactType = "delivery_summary"
+)
+
+type CheckpointType string
+
+const (
+	CheckpointDesignReview CheckpointType = "design_review"
+	CheckpointCodeReview   CheckpointType = "code_review"
+)
+
+type CheckpointStatus string
+
+const (
+	CheckpointPending  CheckpointStatus = "pending"
+	CheckpointApproved CheckpointStatus = "approved"
+	CheckpointRejected CheckpointStatus = "rejected"
+)
+
+type AgentRunStatus string
+
+const (
+	AgentRunPending   AgentRunStatus = "pending"
+	AgentRunRunning   AgentRunStatus = "running"
+	AgentRunSucceeded AgentRunStatus = "succeeded"
+	AgentRunFailed    AgentRunStatus = "failed"
+)
+
+type GitDeliveryStatus string
+
+const (
+	GitDeliveryPending   GitDeliveryStatus = "pending"
+	GitDeliveryDraft     GitDeliveryStatus = "draft"
+	GitDeliveryReady     GitDeliveryStatus = "ready"
+	GitDeliveryCompleted GitDeliveryStatus = "completed"
+	GitDeliveryFailed    GitDeliveryStatus = "failed"
+)
+
+type InPageEditStatus string
+
+const (
+	InPageEditPending  InPageEditStatus = "pending"
+	InPageEditPreview  InPageEditStatus = "preview"
+	InPageEditApplied  InPageEditStatus = "applied"
+	InPageEditReverted InPageEditStatus = "reverted"
+)
+
 type BaseModel struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
+}
+
+type PipelineTemplate struct {
+	ID             string `gorm:"primaryKey;size:64"`
+	Name           string `gorm:"size:128;not null"`
+	Description    string `gorm:"type:text;not null"`
+	Version        string `gorm:"size:32;not null"`
+	DefinitionJSON string `gorm:"type:text;not null"`
+	IsActive       bool   `gorm:"not null;default:true"`
+	BaseModel
+}
+
+type PipelineRun struct {
+	ID              string            `gorm:"primaryKey;size:64"`
+	TemplateID      string            `gorm:"size:64;not null;index"`
+	Template        PipelineTemplate  `gorm:"foreignKey:TemplateID;references:ID"`
+	Title           string            `gorm:"size:255;not null"`
+	RequirementText string            `gorm:"type:text;not null"`
+	SourceSessionID string            `gorm:"size:64;index"`
+	TargetRepo      string            `gorm:"size:255;not null"`
+	TargetBranch    string            `gorm:"size:255;not null"`
+	WorkBranch      string            `gorm:"size:255;not null"`
+	Status          PipelineRunStatus `gorm:"size:32;not null;index"`
+	CurrentStageKey string            `gorm:"size:128;not null"`
+	CreatedBy       string            `gorm:"size:64;not null;index"`
+	StartedAt       *time.Time
+	FinishedAt      *time.Time
+	BaseModel
+}
+
+type StageRun struct {
+	ID            string         `gorm:"primaryKey;size:64"`
+	PipelineRunID string         `gorm:"size:64;not null;index"`
+	StageKey      string         `gorm:"size:128;not null"`
+	StageType     StageType      `gorm:"size:32;not null"`
+	Status        StageRunStatus `gorm:"size:32;not null;index"`
+	Attempt       int            `gorm:"not null;default:1"`
+	InputJSON     string         `gorm:"type:text"`
+	OutputJSON    string         `gorm:"type:text"`
+	ErrorMessage  string         `gorm:"type:text"`
+	StartedAt     *time.Time
+	FinishedAt    *time.Time
+	BaseModel
+}
+
+type Artifact struct {
+	ID            string       `gorm:"primaryKey;size:64"`
+	PipelineRunID string       `gorm:"size:64;not null;index"`
+	StageRunID    string       `gorm:"size:64;index"`
+	ArtifactType  ArtifactType `gorm:"size:64;not null;index"`
+	Title         string       `gorm:"size:255;not null"`
+	ContentText   string       `gorm:"type:text"`
+	ContentJSON   string       `gorm:"type:text"`
+	FilePath      string       `gorm:"size:512"`
+	MetaJSON      string       `gorm:"type:text"`
+	BaseModel
+}
+
+type Checkpoint struct {
+	ID             string           `gorm:"primaryKey;size:64"`
+	PipelineRunID  string           `gorm:"size:64;not null;index"`
+	StageRunID     string           `gorm:"size:64;index"`
+	CheckpointType CheckpointType   `gorm:"size:64;not null"`
+	Status         CheckpointStatus `gorm:"size:32;not null;index"`
+	ApproverID     string           `gorm:"size:64"`
+	Decision       string           `gorm:"size:32"`
+	Comment        string           `gorm:"type:text"`
+	DecidedAt      *time.Time
+	BaseModel
+}
+
+type AgentRun struct {
+	ID             string         `gorm:"primaryKey;size:64"`
+	PipelineRunID  string         `gorm:"size:64;not null;index"`
+	StageRunID     string         `gorm:"size:64;index"`
+	AgentKey       string         `gorm:"size:128;not null"`
+	Provider       string         `gorm:"size:64"`
+	Model          string         `gorm:"size:128"`
+	PromptSnapshot string         `gorm:"type:text"`
+	InputJSON      string         `gorm:"type:text"`
+	OutputJSON     string         `gorm:"type:text"`
+	TokenUsageJSON string         `gorm:"type:text"`
+	LatencyMS      int64          `gorm:"not null;default:0"`
+	Status         AgentRunStatus `gorm:"size:32;not null;index"`
+	ErrorMessage   string         `gorm:"type:text"`
+	BaseModel
+}
+
+type GitDelivery struct {
+	ID               string            `gorm:"primaryKey;size:64"`
+	PipelineRunID    string            `gorm:"size:64;not null;index"`
+	Provider         string            `gorm:"size:64;not null"`
+	Repo             string            `gorm:"size:255;not null"`
+	BaseBranch       string            `gorm:"size:255;not null"`
+	HeadBranch       string            `gorm:"size:255;not null"`
+	CommitSHA        string            `gorm:"size:128"`
+	PRMRURL          string            `gorm:"size:512"`
+	PRMRTitle        string            `gorm:"size:255"`
+	PRMRBody         string            `gorm:"type:text"`
+	ChangedFilesJSON string            `gorm:"type:text"`
+	ValidationJSON   string            `gorm:"type:text"`
+	SummaryMarkdown  string            `gorm:"type:text"`
+	Status           GitDeliveryStatus `gorm:"size:32;not null;index"`
+	BaseModel
+}
+
+type InPageEditSession struct {
+	ID                string           `gorm:"primaryKey;size:64"`
+	PageURL           string           `gorm:"size:512;not null"`
+	PipelineRunID     string           `gorm:"size:64;index"`
+	SelectionJSON     string           `gorm:"type:text"`
+	InstructionText   string           `gorm:"type:text;not null"`
+	LocatorResultJSON string           `gorm:"type:text"`
+	PreviewStatus     InPageEditStatus `gorm:"size:32;not null;index"`
+	CreatedBy         string           `gorm:"size:64;not null;index"`
+	BaseModel
 }
 
 type User struct {
@@ -186,4 +393,12 @@ type MessageDelivery struct {
 	RemoteID   string    `gorm:"size:128"`
 	RawPayload string    `gorm:"type:text"`
 	CreatedAt  time.Time `gorm:"autoCreateTime"`
+}
+
+type OpenAPISpec struct {
+	ID        string `gorm:"primaryKey;size:128"`
+	Title     string `gorm:"size:255"`
+	SpecJSON  string `gorm:"type:text;not null"`
+	SwaggerURL string `gorm:"size:512"`
+	BaseModel
 }

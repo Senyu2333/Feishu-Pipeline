@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from 'react'
 import Sidebar from '../components/Sidebar'
 import {
   Card,
@@ -8,6 +9,7 @@ import {
   Avatar,
   Badge,
   Space,
+  message,
 } from 'antd'
 import {
   UserAddOutlined,
@@ -16,6 +18,7 @@ import {
   EditOutlined,
   CheckCircleOutlined,
 } from '@ant-design/icons'
+import { approveCheckpoint, fetchPipelineCurrent, fetchPipelineRuns, rejectCheckpoint } from '../lib/pipeline'
 
 const historyItems = [
   {
@@ -42,6 +45,78 @@ const historyItems = [
 export default function Approvals() {
   // 左侧导航固定 80px
   const sidebarWidth = 80
+  const [comment, setComment] = useState('')
+  const [runId, setRunID] = useState('')
+  const [checkpointId, setCheckpointID] = useState('')
+  const [submittingAction, setSubmittingAction] = useState<'approve' | 'reject' | null>(null)
+
+  const canSubmitDecision = useMemo(() => Boolean(runId && checkpointId && !submittingAction), [runId, checkpointId, submittingAction])
+
+  useEffect(() => {
+    const resolveCheckpointContext = async () => {
+      try {
+        const queryRunId = new URLSearchParams(window.location.search).get('runId')?.trim() || ''
+        let targetRunId = queryRunId
+
+        if (!targetRunId) {
+          const runs = await fetchPipelineRuns()
+          targetRunId = runs.find(item => item.status === 'waiting_approval')?.id || runs[0]?.id || ''
+        }
+
+        if (!targetRunId) {
+          return
+        }
+
+        setRunID(targetRunId)
+        const current = await fetchPipelineCurrent(targetRunId)
+        setCheckpointID(current.checkpoint?.id || '')
+      } catch (err) {
+        message.error(err instanceof Error ? err.message : '加载审批上下文失败')
+      }
+    }
+
+    void resolveCheckpointContext()
+  }, [])
+
+  const handleApprove = async () => {
+    if (!runId || !checkpointId) {
+      message.warning('未找到可审批的 checkpoint')
+      return
+    }
+
+    setSubmittingAction('approve')
+    try {
+      await approveCheckpoint(checkpointId, comment.trim())
+      message.success('已通过审批')
+      const current = await fetchPipelineCurrent(runId)
+      setCheckpointID(current.checkpoint?.id || '')
+      setComment('')
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '审批失败')
+    } finally {
+      setSubmittingAction(null)
+    }
+  }
+
+  const handleReject = async () => {
+    if (!runId || !checkpointId) {
+      message.warning('未找到可驳回的 checkpoint')
+      return
+    }
+
+    setSubmittingAction('reject')
+    try {
+      await rejectCheckpoint(checkpointId, comment.trim())
+      message.success('已驳回审批')
+      const current = await fetchPipelineCurrent(runId)
+      setCheckpointID(current.checkpoint?.id || '')
+      setComment('')
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '驳回失败')
+    } finally {
+      setSubmittingAction(null)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -115,16 +190,36 @@ export default function Approvals() {
           <aside className="flex flex-col gap-4">
             <Card className="!rounded-xl !shadow-sm" title="Review Action">
               <div className="text-xs font-semibold text-on-surface-variant tracking-wide mb-2">COMMENT & FEEDBACK</div>
-              <Input.TextArea placeholder="Enter your detailed feedback here..." rows={4} className="!bg-surface-container-low !border-outline-variant !rounded-lg mb-3" />
+              <Input.TextArea
+                value={comment}
+                onChange={(event) => setComment(event.target.value)}
+                placeholder="Enter your detailed feedback here..."
+                rows={4}
+                className="!bg-surface-container-low !border-outline-variant !rounded-lg mb-3"
+              />
               <div className="grid grid-cols-2 gap-2 mb-3">
-                <Button icon={<CloseOutlined />} className="!text-red-500 !border-red-200 !bg-red-50 !rounded-lg">
+                <Button
+                  icon={<CloseOutlined />}
+                  className="!text-red-500 !border-red-200 !bg-red-50 !rounded-lg"
+                  onClick={() => void handleReject()}
+                  loading={submittingAction === 'reject'}
+                  disabled={!canSubmitDecision}
+                >
                   Reject
                 </Button>
                 <Button icon={<EditOutlined />} className="!text-primary !border-primary/20 !bg-primary/5 !rounded-lg">
                   Revision
                 </Button>
               </div>
-              <Button type="primary" icon={<CheckCircleOutlined />} block className="!h-11 !rounded-xl !text-sm !font-semibold">
+              <Button
+                type="primary"
+                icon={<CheckCircleOutlined />}
+                block
+                className="!h-11 !rounded-xl !text-sm !font-semibold"
+                onClick={() => void handleApprove()}
+                loading={submittingAction === 'approve'}
+                disabled={!canSubmitDecision}
+              >
                 Approve Document
               </Button>
             </Card>

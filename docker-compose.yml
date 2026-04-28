@@ -1,0 +1,30 @@
+services:
+  api-go:
+    build:
+      context: ./apps/api-go
+      dockerfile: Dockerfile
+    volumes:
+      - ./deploy/config.yaml:/app/config/config.yaml
+      - api-go-data:/app/data
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - api-go
+    restart: unless-stopped
+    networks:
+      - app-network
+
+volumes:
+  api-go-data:
+
+networks:
+  app-network:
+    driver: bridge

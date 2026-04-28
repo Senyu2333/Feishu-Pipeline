@@ -9,6 +9,7 @@ import Delivery from './pages/Delivery'
 import AuthCallback from './pages/AuthCallback'
 import Session from './pages/Session'
 import Debug from './pages/Debug'
+import { APIDocument } from './pages/Swagger'
 
 
 
@@ -68,7 +69,13 @@ const debugRoute = createRoute({
   component: Debug,
 })
 
-const routeTree = rootRoute.addChildren([indexRoute, newRequirementRoute, workflowsRoute, monitoringRoute, approvalsRoute, deliveryRoute, authCallbackRoute, sessionRoute, debugRoute])
+const swaggerRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/swagger',
+  component: APIDocument,
+})
+
+const routeTree = rootRoute.addChildren([indexRoute, newRequirementRoute, workflowsRoute, monitoringRoute, approvalsRoute, deliveryRoute, authCallbackRoute, sessionRoute, debugRoute, swaggerRoute])
 const router = createRouter({ routeTree })
 
 declare module '@tanstack/react-router' {

@@ -34,23 +34,26 @@ type DatabaseConfig struct {
 }
 
 type FeishuConfig struct {
-	Enabled            bool   `mapstructure:"enabled"`
-	AppID              string `mapstructure:"app_id"`
-	AppSecret          string `mapstructure:"app_secret"`
-	RedirectURL        string `mapstructure:"redirect_url"`
-	OpenBaseURL        string `mapstructure:"open_base_url"`
-	BotName            string `mapstructure:"bot_name"`
-	ReceiveIDType      string `mapstructure:"receive_id_type"`
-	DocFolderToken     string `mapstructure:"doc_folder_token"`
-	BitableName        string `mapstructure:"bitable_name"`
-	BitableFolderToken string `mapstructure:"bitable_folder_token"`
-	BitableAppToken    string `mapstructure:"bitable_app_token"`
-	BitableTableID     string `mapstructure:"bitable_table_id"`
+	Enabled              bool   `mapstructure:"enabled"`
+	AppID                string `mapstructure:"app_id"`
+	AppSecret            string `mapstructure:"app_secret"`
+	RedirectURL          string `mapstructure:"redirect_url"`
+	OpenBaseURL          string `mapstructure:"open_base_url"`
+	OAuthScope           string `mapstructure:"oauth_scope"`
+	BotName              string `mapstructure:"bot_name"`
+	ReceiveIDType        string `mapstructure:"receive_id_type"`
+	DocFolderToken       string `mapstructure:"doc_folder_token"`
+	BitableName          string `mapstructure:"bitable_name"`
+	BitableFolderToken   string `mapstructure:"bitable_folder_token"`
+	BitableAppToken      string `mapstructure:"bitable_app_token"`
+	BitableTableID       string `mapstructure:"bitable_table_id"`
+	BitableTemplateToken string `mapstructure:"bitable_template_token"`
 }
 
 type AIConfig struct {
-	Provider string      `mapstructure:"provider"`
-	Ark      ArkAIConfig `mapstructure:"ark"`
+	Provider         string                   `mapstructure:"provider"`
+	Ark              ArkAIConfig              `mapstructure:"ark"`
+	OpenAICompatible OpenAICompatibleAIConfig `mapstructure:"openai_compatible"`
 }
 
 type ArkAIConfig struct {
@@ -60,6 +63,14 @@ type ArkAIConfig struct {
 	Temperature float32 `mapstructure:"temperature"`
 	MaxTokens   int     `mapstructure:"max_tokens"`
 	TimeoutSec  int     `mapstructure:"timeout_sec"`
+}
+
+type OpenAICompatibleAIConfig struct {
+	BaseURL    string `mapstructure:"base_url"`
+	Model      string `mapstructure:"model"`
+	APIKey     string `mapstructure:"api_key"`
+	MaxTokens  int    `mapstructure:"max_tokens"`
+	TimeoutSec int    `mapstructure:"timeout_sec"`
 }
 
 func LoadConfig(configPath string) (*Config, error) {
@@ -135,6 +146,21 @@ func LoadConfig(configPath string) (*Config, error) {
 	}
 	if cfg.AI.Ark.APIKey == "" {
 		cfg.AI.Ark.APIKey = strings.TrimSpace(os.Getenv("FEISHU_PIPELINE_AI_ARK_API_KEY"))
+	}
+	if cfg.AI.OpenAICompatible.BaseURL == "" {
+		cfg.AI.OpenAICompatible.BaseURL = "https://api.openai.com/v1"
+	}
+	if cfg.AI.OpenAICompatible.Model == "" {
+		cfg.AI.OpenAICompatible.Model = "openai-compatible-model"
+	}
+	if cfg.AI.OpenAICompatible.MaxTokens <= 0 {
+		cfg.AI.OpenAICompatible.MaxTokens = 4096
+	}
+	if cfg.AI.OpenAICompatible.TimeoutSec <= 0 {
+		cfg.AI.OpenAICompatible.TimeoutSec = 120
+	}
+	if cfg.AI.OpenAICompatible.APIKey == "" {
+		cfg.AI.OpenAICompatible.APIKey = strings.TrimSpace(os.Getenv("FEISHU_PIPELINE_AI_OPENAI_COMPATIBLE_API_KEY"))
 	}
 
 	cfg.Database.Path = resolvePath(cfg.Database.Path)

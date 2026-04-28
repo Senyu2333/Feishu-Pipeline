@@ -4,8 +4,13 @@
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
+import axios from 'axios'
 import { feishuClient, lark, getDocumentRawContent } from '../lib/feishu.js'
 import { http } from '../lib/http.js'
+
+// 飞书应用配置
+const FEISHU_APP_ID = process.env.FEISHU_APP_ID ?? ''
+const FEISHU_APP_SECRET = process.env.FEISHU_APP_SECRET ?? ''
 
 export async function feishuRoutes(app: FastifyInstance) {
   // ── 示例 1: 获取飞书文档内容（Go 后端没有的 API）──────────────────────
@@ -81,6 +86,39 @@ export async function feishuRoutes(app: FastifyInstance) {
     } catch (err) {
       const error = err as Error
       return reply.status(500).send({ success: false, error: error.message })
+    }
+  })
+
+  // ── 示例 6: 获取 Wiki 节点信息 ──────────────────────────────────────
+  app.get('/api/feishu/wiki-node', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { token } = request.query as { token?: string }
+    if (!token) {
+      return reply.status(400).send({ success: false, error: 'token is required' })
+    }
+    try {
+      // 获取 tenant_access_token
+      const tokenRes = await axios.post(
+        'https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal',
+        { app_id: FEISHU_APP_ID, app_secret: FEISHU_APP_SECRET }
+      )
+      const accessToken = tokenRes.data.app_access_token
+
+      // 调用 wiki API 获取节点信息
+      const response = await axios.get(
+        `https://open.feishu.cn/open-apis/wiki/v2/spaces/get_node?token=${token}`,
+        {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }
+      )
+
+      if (response.data?.code !== 0) {
+        return reply.status(400).send({ success: false, error: response.data?.msg || '获取 wiki 节点失败' })
+      }
+
+      return reply.send({ success: true, data: response.data?.data?.node })
+    } catch (err) {
+      const error = err as { message?: string; response?: { data?: unknown } }
+      return reply.status(500).send({ success: false, error: error.message, detail: error.response?.data })
     }
   })
 }

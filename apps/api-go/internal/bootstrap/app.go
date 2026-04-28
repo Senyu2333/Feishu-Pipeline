@@ -12,6 +12,7 @@ import (
 	"feishu-pipeline/apps/api-go/internal/external/ai"
 	"feishu-pipeline/apps/api-go/internal/external/feishu"
 	"feishu-pipeline/apps/api-go/internal/job"
+	"feishu-pipeline/apps/api-go/internal/pipeline"
 	"feishu-pipeline/apps/api-go/internal/repo"
 	"feishu-pipeline/apps/api-go/internal/router"
 	"feishu-pipeline/apps/api-go/internal/service"
@@ -60,33 +61,37 @@ func NewApplication(ctx context.Context, configPath string, version string) (*Ap
 		return nil, err
 	}
 	feishuClient := feishu.NewClient(feishu.Config{
-		Enabled:            cfg.Feishu.Enabled,
-		AppID:              cfg.Feishu.AppID,
-		AppSecret:          cfg.Feishu.AppSecret,
-		RedirectURL:        cfg.Feishu.RedirectURL,
-		OpenBaseURL:        cfg.Feishu.OpenBaseURL,
-		BotName:            cfg.Feishu.BotName,
-		ReceiveIDType:      cfg.Feishu.ReceiveIDType,
-		DocFolderToken:     cfg.Feishu.DocFolderToken,
-		BitableName:        cfg.Feishu.BitableName,
-		BitableFolderToken: cfg.Feishu.BitableFolderToken,
-		BitableAppToken:    cfg.Feishu.BitableAppToken,
-		BitableTableID:     cfg.Feishu.BitableTableID,
-		BaseURL:            cfg.App.BaseURL,
+		Enabled:              cfg.Feishu.Enabled,
+		AppID:                cfg.Feishu.AppID,
+		AppSecret:            cfg.Feishu.AppSecret,
+		RedirectURL:          cfg.Feishu.RedirectURL,
+		OpenBaseURL:          cfg.Feishu.OpenBaseURL,
+		OAuthScope:           cfg.Feishu.OAuthScope,
+		BotName:              cfg.Feishu.BotName,
+		ReceiveIDType:        cfg.Feishu.ReceiveIDType,
+		DocFolderToken:       cfg.Feishu.DocFolderToken,
+		BitableName:          cfg.Feishu.BitableName,
+		BitableFolderToken:   cfg.Feishu.BitableFolderToken,
+		BitableAppToken:      cfg.Feishu.BitableAppToken,
+		BitableTableID:       cfg.Feishu.BitableTableID,
+		BitableTemplateToken: cfg.Feishu.BitableTemplateToken,
+		BaseURL:              cfg.App.BaseURL,
 	})
 
 	authService := service.NewAuthService(repository, feishuClient, time.Duration(cfg.App.SessionTTLHours)*time.Hour)
 	healthService := service.NewHealthService(cfg.App.Name, cfg.App.Version)
+	sessionService := service.NewSessionService(repository, authService, aiClient)
 	taskService := service.NewTaskService(repository, feishuClient)
 	adminService := service.NewAdminService(repository)
-	pipelineService := service.NewPipelineService(feishuClient)
-	sessionService := service.NewSessionService(repository, authService, aiClient)
-	sessionService.SetPipelineService(pipelineService)
+	pipelineProvider := pipeline.NewTextGenerationProvider(cfg.AI.Provider, cfg.AI.Ark.Model, aiClient)
+	pipelineExecutor := pipeline.NewSequentialExecutor(pipeline.WithAgentRunner(pipeline.NewAgentRunner(pipelineProvider, pipeline.DefaultPromptRegistry())))
+	pipelineService := service.NewPipelineService(repository, service.WithPipelineExecutor(pipelineExecutor))
 	publishService := service.NewPublishService(repository, authService, agentEngine, feishuClient, pipelineService)
 	sessionService.SetPublisher(publishService)
 
-	runner := job.NewRunner(nil, publishService)
+	runner := job.NewRunner(nil, publishService, pipelineService)
 	publishService.SetQueue(runner)
+	pipelineService.SetQueue(runner)
 	runner.Start(ctx)
 
 	engine := router.New(router.Dependencies{
@@ -97,6 +102,7 @@ func NewApplication(ctx context.Context, configPath string, version string) (*Ap
 		TaskController:     controller.NewTaskController(taskService),
 		AdminController:    controller.NewAdminController(adminService),
 		PipelineController: controller.NewPipelineController(pipelineService),
+		OpenAPIController:  controller.NewOpenAPIController(repository),
 		AuthService:        authService,
 	})
 

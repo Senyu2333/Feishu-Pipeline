@@ -1,6 +1,5 @@
 import axios from 'axios'
 import {OpenAI} from 'openai'
-import { importOpenApiFromSpec } from '../../lib/apifox.js'
 import { sendMessage } from '../../lib/feishu.js'
 
 // 飞书应用配置
@@ -238,6 +237,23 @@ export const documentTools = [
   {
     type: "function" as const,
     function: {
+      name: "saveOpenApiSpec",
+      description: "保存生成的Swagger/OpenAPI规范JSON，返回对应的Swagger UI页面访问链接。当你生成了API接口文档后，必须调用此工具来保存并获取页面链接。",
+      parameters: {
+        type: "object",
+        properties: {
+          spec: {
+            type: "object",
+            description: "完整的Swagger/OpenAPI 3.0规范JSON对象"
+          }
+        },
+        required: ["spec"]
+      }
+    }
+  },
+  {
+    type: "function" as const,
+    function: {
       name: "createFeishuDocument",
       description: "创建飞书文档（docx）。当需要为用户生成文档时使用此工具。",
       parameters: {
@@ -291,6 +307,142 @@ export const documentTools = [
         required: ["user_token", "document_id", "blocks"]
       }
     }
+  },{
+    type:"function" as const,
+    function:{
+      name:"createSwapperApiJson",
+      description:`生成符合OpenAPI 3.0规范的 JSON 文档，用于Swagger UI展示，
+      每个接口要包含：
+   - summary
+   - description
+   - parameters（如有）
+   - requestBody（如有）
+   - responses（必须包含200响应）
+      只返回 JSON，不要 markdown，不要解释
+      `,
+      "parameters": {
+    "type": "object",
+    "properties": {
+      "apiInfo": {
+        "type": "object",
+        "description": "API基础信息",
+        "properties": {
+          "title": { "type": "string" },
+          "version": { "type": "string" },
+          "description": { "type": "string" }
+        },
+        "required": ["title", "version"]
+      },
+      "servers": {
+        "type": "array",
+        "description": "服务器地址列表",
+        "items": {
+          "type": "object",
+          "properties": {
+            "url": { "type": "string" },
+            "description": { "type": "string" }
+          },
+          "required": ["url"]
+        }
+      },
+      "endpoints": {
+        "type": "array",
+        "description": "接口列表",
+        "items": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "接口路径，如 /user/login"
+            },
+            "method": {
+              "type": "string",
+              "enum": ["get", "post", "put", "delete", "patch"]
+            },
+            "summary": { "type": "string" },
+            "description": { "type": "string" },
+            "tags": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "queryParams": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "type": { "type": "string" },
+                  "required": { "type": "boolean" },
+                  "description": { "type": "string" },
+                  "example": {}
+                },
+                "required": ["name", "type"]
+              }
+            },
+            "pathParams": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "type": { "type": "string" },
+                  "required": { "type": "boolean" }
+                },
+                "required": ["name", "type"]
+              }
+            },
+            "headers": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "type": { "type": "string" },
+                  "required": { "type": "boolean" }
+                },
+                "required": ["name", "type"]
+              }
+            },
+            "requestBody": {
+              "type": "object",
+              "description": "请求体定义（JSON）",
+              "properties": {
+                "contentType": {
+                  "type": "string",
+                  "default": "application/json"
+                },
+                "schema": {
+                  "type": "object",
+                  "description": "字段结构（key-value形式）"
+                },
+                "example": {}
+              }
+            },
+            "responses": {
+              "type": "object",
+              "description": "响应定义",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "description": { "type": "string" },
+                  "schema": { "type": "object" },
+                  "example": {}
+                }
+              }
+            },
+            "auth": {
+              "type": "string",
+              "enum": ["none", "bearer", "apiKey"]
+            }
+          },
+          "required": ["path", "method", "summary"]
+        }
+      }
+    },
+    "required": ["apiInfo", "endpoints"]
+  }
+    },
+    
   }
 ]
 
@@ -364,6 +516,26 @@ export const documentToolHandlers = {
     } catch (err: any) {
       console.error('[AI Tool] importOpenApiToApifox error:', err)
       return JSON.stringify({ success: false, error: err.message })
+    }
+  },
+  saveOpenApiSpec: async (args: { spec: Record<string, unknown> }) => {
+    try {
+      console.log('[saveOpenApiSpec] Calling with spec keys:', Object.keys(args.spec || {}))
+      const response = await axios.post('http://localhost:3001/api/openapi', {
+        spec: args.spec
+      })
+      console.log('[saveOpenApiSpec] Response:', response.data)
+      if (response.data?.success) {
+        return JSON.stringify({
+          success: true,
+          specId: response.data.data.specId,
+          swaggerUrl: response.data.data.swaggerUrl
+        })
+      }
+      return JSON.stringify({ success: false, error: response.data?.error || '保存OpenAPI规范失败' })
+    } catch (err: any) {
+      console.error('[saveOpenApiSpec] Error:', err.response?.data || err.message)
+      return JSON.stringify({ success: false, error: err.response?.data?.error || err.message })
     }
   },
   createFeishuDocument: async (args: { user_token: string; folder_token?: string; title: string }) => {
@@ -549,35 +721,49 @@ export const documentToolHandlers = {
 
 /**
  * SSE 流式 AI 对话（支持 CoT 和 Function Calling 可观测性）
+ * @param userMessage 用户消息
+ * @param userToken 用户飞书token
+ * @param openId 用户openId
+ * @param onEvent 事件回调函数，用于将 SSE 事件发送到客户端
  */
 export async function runAIChatStream(
   userMessage: string,
   userToken?: string,
-  openId?: string
+  openId?: string,
+  onEvent?: (event: string, data: any) => void
 ): Promise<{
   sendToClient: (event: string, data: any) => void
   finish: () => void
+  completed: Promise<void> // 新增：返回完成 Promise
 }> {
   // 创建动态 OpenAI 客户端
   const apiKey = process.env.OPENAI_API_KEY
   const client = new OpenAI({ apiKey, baseURL: "https://api.deepseek.com" })
   
-  // 流式回调由调用方提供
-  const callbacks: Array<{ event: string; data: any }> = []
+  // 事件回调
   let finished = false
+  let completeResolve: (() => void) | null = null
+  const completed = new Promise<void>((resolve) => {
+    completeResolve = resolve
+  })
 
   const sendToClient = (event: string, data: any) => {
-    if (!finished) {
-      callbacks.push({ event, data })
+    if (!finished && onEvent) {
+      onEvent(event, data)
     }
   }
 
   const finish = () => {
     finished = true
+    if (completeResolve) {
+      completeResolve()
+    }
   }
 
+  console.log('[runAIChatStream] Function started, onEvent:', !!onEvent)
   // 在后台运行 AI 对话
   setImmediate(async () => {
+    console.log('[runAIChatStream] setImmediate callback running')
     try {
       // 构建系统提示词
       const systemPrompt = `
@@ -587,6 +773,7 @@ export async function runAIChatStream(
 1. 分析用户需求文档（**自动识别文本中的飞书文档链接并提取内容**）
 2. 生成API接口设计文档
 3. **创建飞书文档并写入内容（必须调用工具，禁止直接输出文本）**
+4. **生成 Swagger UI 可视化接口文档（必须调用 saveOpenApiSpec）**
 
 ## 强制规则
 **重要：你必须调用工具完成工作，禁止直接输出文本内容！**
@@ -594,6 +781,7 @@ export async function runAIChatStream(
 - 不要直接输出代码
 - **必须**先调用 createFeishuDocument 创建文档
 - **必须**再调用 createFeishuDocumentBlocks 写入内容
+- **必须**调用 saveOpenApiSpec 保存 OpenAPI JSON 并获取 Swagger UI 链接
 - **严格禁止：禁止调用任何发送消息的工具！**
 
 ## 可用工具
@@ -618,20 +806,30 @@ export async function runAIChatStream(
   - content: 文本内容（**每个 content 不要超过 200 字符**）
   - **JSON格式要求：content 中的引号必须转义为 \", 换行必须使用 \n**
 
+### 3. saveOpenApiSpec - 保存 OpenAPI JSON 并生成 Swagger UI
+**必须调用此工具**来生成可交互的接口调试页面：
+- spec: 完整的 OpenAPI 3.0 规范 JSON 对象，包含：
+  - openapi: "3.0.0"
+  - info: { title, version, description }
+  - paths: 接口路径对象
+  - components: { schemas: 数据模型 }
+
 ## 工作流程
 1. **提取文档内容**：如果用户输入包含飞书文档链接，先调用 extractContentFromUrls
 2. **分析需求**：结合提取的文档内容，理解用户需求
 3. **设计API**：根据需求设计API接口
 4. **创建文档**：调用 createFeishuDocument（只需一次）
 5. **写入内容**：调用 createFeishuDocumentBlocks（只需一次，不要重复调用！）
+6. **生成Swagger UI**：调用 saveOpenApiSpec 保存 OpenAPI JSON
 
 ## 重要提醒
 - **createFeishuDocumentBlocks 只能调用一次！**调用后直接返回文档链接，不要再次调用
-- 文档创建后，**直接返回文档链接**
+- **saveOpenApiSpec 必须调用！**用于生成 Swagger UI 页面链接
+- 文档创建后，**直接返回文档链接和 Swagger UI 链接**
 - **不要调用任何发送消息的工具**
 
 ## 输出格式
-创建文档后，返回文档链接即可。
+创建文档后，返回飞书文档链接和 Swagger UI 链接。
 `
 
       const openai = new OpenAI({
@@ -676,7 +874,9 @@ export async function runAIChatStream(
             if (!handler) {
               throw new Error(`Unknown tool: ${name}`)
             }
+            console.log(`[AI Tool] Calling: ${name}`)
             const result = await handler(JSON.parse(func.arguments))
+            console.log(`[AI Tool] ${name} result:`, JSON.parse(result))
 
             // 发送工具调用结果
             sendToClient('tool_result', {
@@ -707,19 +907,77 @@ export async function runAIChatStream(
           }
         }
 
-        // 递归继续对话
-        sendToClient('thinking', { content: '继续生成回复...' })
+        // 递归继续对话 - 需要持续调用直到没有工具调用
+        let continueLoop = true
+        while (continueLoop) {
+          sendToClient('thinking', { content: '继续生成回复...' })
 
-        const finalResponse = await client.chat.completions.create({
-          model: 'deepseek-chat',
-          messages,
-          tools: documentTools as any,
-          tool_choice: 'auto'
-        })
+          const finalResponse = await client.chat.completions.create({
+            model: 'deepseek-chat',
+            messages,
+            tools: documentTools as any,
+            tool_choice: 'required'
+          })
 
-        const finalContent = finalResponse.choices[0]?.message?.content || ''
-        sendToClient('text', { content: finalContent })
-        sendToClient('done', { content: finalContent })
+          const finalMessage = finalResponse.choices[0]?.message
+          
+          if (finalMessage?.tool_calls && finalMessage.tool_calls.length > 0) {
+            // 有新的工具调用，继续处理
+            messages.push(finalMessage)
+            
+            for (const toolCall of finalMessage.tool_calls) {
+              const func = (toolCall as any).function
+              const name = func.name
+              
+              sendToClient('tool_call', {
+                name,
+                arguments: func.arguments,
+                status: 'calling'
+              })
+              
+              try {
+                const handler = documentToolHandlers[name as keyof typeof documentToolHandlers]
+                if (!handler) {
+                  throw new Error(`Unknown tool: ${name}`)
+                }
+                console.log(`[AI Tool] Calling: ${name}`)
+                const result = await handler(JSON.parse(func.arguments))
+                console.log(`[AI Tool] ${name} result:`, JSON.parse(result))
+
+                sendToClient('tool_result', {
+                  name,
+                  result: JSON.parse(result),
+                  status: 'success'
+                })
+
+                messages.push({
+                  role: 'tool',
+                  tool_call_id: toolCall.id,
+                  content: result
+                })
+              } catch (err: any) {
+                sendToClient('tool_result', {
+                  name,
+                  error: err.message,
+                  status: 'error'
+                })
+
+                messages.push({
+                  role: 'tool',
+                  tool_call_id: toolCall.id,
+                  content: JSON.stringify({ error: err.message })
+                })
+              }
+            }
+            // 继续循环处理更多工具调用
+          } else {
+            // 没有更多工具调用，结束
+            continueLoop = false
+            const finalContent = finalMessage?.content || ''
+            sendToClient('text', { content: finalContent })
+            sendToClient('done', { content: finalContent })
+          }
+        }
       } else {
         // 无工具调用
         sendToClient('text', { content: assistantMessage?.content || '' })
@@ -732,7 +990,7 @@ export async function runAIChatStream(
     }
   })
 
-  return { sendToClient, finish }
+  return { sendToClient, finish, completed }
 }
 
 const openai = new OpenAI({
@@ -740,7 +998,14 @@ const openai = new OpenAI({
     baseURL:"https://api.deepseek.com"
 })
 
-export async function runAIChat(userMessage: string, messages: any[] = [], isFirstCall: boolean = true, userToken?: string, openId?: string) {
+export async function runAIChat(userMessage: string, messages: any[] = [], isFirstCall: boolean = true, userToken?: string, openId?: string, recursionDepth: number = 0) {
+    const MAX_RECURSION = 5  // 最大递归深度
+    
+    if (recursionDepth >= MAX_RECURSION) {
+        console.log(`[AI Tool] Stopping: max recursion depth (${MAX_RECURSION}) reached`)
+        return '达到最大递归深度，停止处理'
+    }
+    
     const apiKey = process.env.OPENAI_API_KEY
     const client = new OpenAI({
         apiKey: apiKey,
@@ -827,8 +1092,17 @@ export async function runAIChat(userMessage: string, messages: any[] = [], isFir
         // 添加 assistant 的 tool_calls 消息
         messages.push(assistantMessage)
         let forceStop = false
+        let consecutiveErrors = 0  // 连续错误计数
         
         for(const toolCall of assistantMessage.tool_calls){
+            // 连续错误达到3次，停止调用
+            if (consecutiveErrors >= 3) {
+                console.log(`[AI Tool] Stopping: ${consecutiveErrors} consecutive errors reached`)
+                const stopMsg = `工具连续失败${consecutiveErrors}次，停止调用`
+                messages.push({role:"tool",tool_call_id:toolCall.id,content:JSON.stringify({error: stopMsg})})
+                break
+            }
+            
             try {
                 // 兼容处理 OpenAI SDK 的不同版本
                 const func = (toolCall as any).function
@@ -877,20 +1151,41 @@ export async function runAIChat(userMessage: string, messages: any[] = [], isFir
                         // 返回错误，不使用空对象
                         const errorMsg = `JSON解析失败: ${(parseErr as Error).message}`
                         messages.push({role:"tool",tool_call_id:toolCall.id,content:JSON.stringify({error: errorMsg})})
+                        consecutiveErrors++
                         continue // 跳过这个工具调用
                     }
                 }
                 
+                console.log(`[AI Tool] Calling ${name} with args:`, JSON.stringify(parsedArgs)?.substring(0, 200))
                 const result = await documentToolHandlers[name](parsedArgs as any)
                 console.log(`[AI Tool] ${name} result:`, result)
                 // 添加 tool 角色的消息
                 messages.push({role:"tool",tool_call_id:toolCall.id,content:result})
+                
+                // 检查结果是否包含错误
+                try {
+                    const resultObj = JSON.parse(result)
+                    if (!resultObj.success) {
+                        consecutiveErrors++
+                    } else {
+                        consecutiveErrors = 0
+                    }
+                } catch {
+                    consecutiveErrors = 0
+                }
             } catch (toolErr: any) {
                 // 工具调用失败
                 const errorMsg = `工具调用失败: ${toolErr.message}`
                 console.error(`[AI Tool] Error:`, errorMsg)
                 messages.push({role:"tool",tool_call_id:toolCall.id,content:JSON.stringify({error: errorMsg})})
+                consecutiveErrors++
             }
+        }
+
+        // 连续错误达到3次，停止递归
+        if (consecutiveErrors >= 3) {
+            console.log('[AI Tool] Stopping recursion: too many consecutive errors')
+            return '工具调用连续失败，停止处理'
         }
 
         // 如果 createFeishuDocumentBlocks 已调用，跳过递归，直接返回文档链接
@@ -911,8 +1206,8 @@ export async function runAIChat(userMessage: string, messages: any[] = [], isFir
             return docUrl ? `文档已创建: ${docUrl}` : '文档已创建但未获取到链接'
         }
 
-        // 递归调用时标记为非首次
-        return runAIChat(userMessage, messages, false)
+        // 递归调用时标记为非首次，增加递归深度
+        return runAIChat(userMessage, messages, false, userToken, openId, recursionDepth + 1)
     }
     
     // 从消息历史中提取文档链接

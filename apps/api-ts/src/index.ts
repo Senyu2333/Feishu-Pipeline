@@ -3,10 +3,9 @@ import cors from '@fastify/cors'
 import axios from 'axios'
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import { feishuClient, lark, getDepartmentChildren, batchGetDepartments, batchGetUserNames, sendMessage, createBitableApp, listBitableTables, createBitableTable, listBitableRecords, upsertBitableRecord, batchUpsertBitableRecords } from './lib/feishu.js'
-import { getDocumentForAI, runAIChat } from './api/test/index.js'
-import dotenv from 'dotenv'
+import { getDocumentForAI, runAIChat, runAIChatStream } from './api/test/index.js'
 
-dotenv.config()
+// 注意: .env 由 tsx -r dotenv/config 在启动时加载
 
 const FEISHU_APP_ID = process.env.FEISHU_APP_ID
 const FEISHU_APP_SECRET = process.env.FEISHU_APP_SECRET
@@ -293,6 +292,91 @@ app.get("/api/feishu/wiki-spaces", async (request: FastifyRequest, reply: Fastif
   }
 })
 
+// DeepSeek 模型列表
+app.get("/api/deepseek/models", async (request: FastifyRequest, reply: FastifyReply) => {
+  try {
+    const apiKey = process.env.OPENAI_API_KEY
+    if (!apiKey) {
+      return reply.status(400).send({ success: false, error: 'OPENAI_API_KEY not configured' })
+    }
+    
+    const response = await axios.get('https://api.deepseek.com/models', {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`
+      }
+    })
+    
+    return reply.send({ success: true, data: response.data })
+  } catch (err: any) {
+    console.error('[DeepSeek models] Error:', err.response?.data || err.message)
+    return reply.status(500).send({ 
+      success: false, 
+      error: err.response?.data || err.message 
+    })
+  }
+})
+
+// 保存 OpenAPI 规范并生成 Swagger UI
+// OpenAPI spec 转发到 Go 后端
+const GO_API_BASE = process.env.GO_API_BASE || 'http://localhost:8080'
+
+app.post("/api/openapi", async (request: FastifyRequest, reply: FastifyReply) => {
+  try {
+    const { spec } = request.body as any
+    
+    if (!spec) {
+      return reply.status(400).send({ success: false, error: 'spec is required' })
+    }
+    
+    // 调用 Go 后端保存 spec
+    const response = await axios.post(`${GO_API_BASE}/public/openapi/specs`, {
+      title: spec?.info?.title || 'API 文档',
+      spec_json: JSON.stringify(spec)
+    })
+    
+    if (response.data?.success) {
+      return reply.send({
+        success: true,
+        data: {
+          specId: response.data.data.specId,
+          swaggerUrl: response.data.data.swaggerUrl
+        }
+      })
+    }
+    
+    return reply.status(500).send({ success: false, error: response.data?.error || '保存失败' })
+  } catch (err: any) {
+    console.error('[saveOpenApiSpec] Error:', err.response?.data || err.message)
+    return reply.status(500).send({ 
+      success: false, 
+      error: err.response?.data?.error || err.message 
+    })
+  }
+})
+
+// 获取 OpenAPI 规范（供 Swagger UI 使用，转发到 Go 后端）
+app.get("/api/openapi/:specId", async (request: FastifyRequest, reply: FastifyReply) => {
+  try {
+    const { specId } = request.params as any
+    
+    // 调用 Go 后端获取 spec
+    const response = await axios.get(`${GO_API_BASE}/public/openapi/specs/${specId}`, {
+      headers: { 'Accept': 'application/json' }
+    })
+    
+    // Go 后端直接返回 spec JSON
+    return reply.send(response.data)
+  } catch (err: any) {
+    console.error('[getOpenApiSpec] Error:', err.response?.data || err.message)
+    if (err.response?.status === 404) {
+      return reply.status(404).send({ error: 'Spec not found' })
+    }
+    return reply.status(500).send({ error: err.message })
+  }
+})
+
+// DeepSeek 模型列表
+
 // AI Function Calling
 app.post("/api/ai/get-document-content", async (request: FastifyRequest, reply: FastifyReply) => {
   try {
@@ -352,20 +436,57 @@ app.post("/api/ai/chat/stream", async (request: FastifyRequest, reply: FastifyRe
       'Access-Control-Allow-Credentials': 'true',
     })
     
-    reply.raw.write(`data: {"event":"start","content":"开始分析需求..."}\n\n`)
+    // 发送初始事件
+    reply.raw.write(`data: {\"event\":\"start\",\"content\":\"开始分析需求...\"}\n\n`)
+    console.log('[chat/stream] Starting AI processing...')
     
     const fullMessage = document_content
       ? `请根据以下文档内容生成代码实现：\n\n${document_content}`
       : message
     
-    const result = await runAIChat(fullMessage, [], true, user_token, open_id)
+    // 事件计数器用于调试
+    let eventCount = 0
     
-    reply.raw.write(`data: {"event":"done","content":"${String(result).replace(/"/g, '\\"').replace(/\n/g, '\\n')}"}\n\n`)
+    // 使用 runAIChatStream，传入事件回调
+    const { finish, completed } = await runAIChatStream(
+      fullMessage,
+      user_token,
+      open_id,
+      (event, data) => {
+        eventCount++
+        console.log(`[chat/stream] Event #${eventCount}: ${event}`, data)
+        // 将事件转发到客户端
+        reply.raw.write(`data: ${JSON.stringify({ event, ...data })}\n\n`)
+      }
+    )
+    
+    console.log(`[chat/stream] runAIChatStream returned, waiting for completion...`)
+    
+    // 发送心跳保持连接
+    const heartbeat = setInterval(() => {
+      reply.raw.write(`: ping\n\n`)
+    }, 20000)
+    
+    // 等待 AI 处理完成（最多 120 秒超时）
+    try {
+      await Promise.race([
+        completed,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('AI 处理超时')), 120000))
+      ])
+    } catch (err: any) {
+      console.error('[chat/stream] Processing error:', err.message)
+    }
+    
+    console.log(`[chat/stream] Processing complete. Total events: ${eventCount}`)
+    clearInterval(heartbeat)
+    finish()
+    reply.raw.write(`data: {\"event\":\"done\",\"content\":\"处理完成\"}\n\n`)
     reply.raw.end()
     
   } catch (err) {
     const error = err as Error
-    reply.raw.write(`data: {"event":"error","message":"${error.message}"}\n\n`)
+    console.error('[chat/stream] Error:', error)
+    reply.raw.write(`data: {\"event\":\"error\",\"message\":\"${error.message}\"}\n\n`)
     reply.raw.end()
   }
 })

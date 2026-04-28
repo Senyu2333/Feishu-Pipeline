@@ -12,6 +12,7 @@ import (
 	"feishu-pipeline/apps/api-go/internal/external/ai"
 	"feishu-pipeline/apps/api-go/internal/external/feishu"
 	"feishu-pipeline/apps/api-go/internal/job"
+	"feishu-pipeline/apps/api-go/internal/pipeline"
 	"feishu-pipeline/apps/api-go/internal/repo"
 	"feishu-pipeline/apps/api-go/internal/router"
 	"feishu-pipeline/apps/api-go/internal/service"
@@ -82,12 +83,15 @@ func NewApplication(ctx context.Context, configPath string, version string) (*Ap
 	sessionService := service.NewSessionService(repository, authService, aiClient)
 	taskService := service.NewTaskService(repository, feishuClient)
 	adminService := service.NewAdminService(repository)
-	pipelineService := service.NewPipelineService(feishuClient)
+	pipelineProvider := pipeline.NewTextGenerationProvider(cfg.AI.Provider, cfg.AI.Ark.Model, aiClient)
+	pipelineExecutor := pipeline.NewSequentialExecutor(pipeline.WithAgentRunner(pipeline.NewAgentRunner(pipelineProvider, pipeline.DefaultPromptRegistry())))
+	pipelineService := service.NewPipelineService(repository, service.WithPipelineExecutor(pipelineExecutor))
 	publishService := service.NewPublishService(repository, authService, agentEngine, feishuClient, pipelineService)
 	sessionService.SetPublisher(publishService)
 
-	runner := job.NewRunner(nil, publishService)
+	runner := job.NewRunner(nil, publishService, pipelineService)
 	publishService.SetQueue(runner)
+	pipelineService.SetQueue(runner)
 	runner.Start(ctx)
 
 	engine := router.New(router.Dependencies{

@@ -213,15 +213,6 @@ func (s *PublishService) HandlePublish(ctx context.Context, payload job.PublishJ
 	}
 	log.Printf("publish workflow persisted: session_id=%s requirement_id=%s tasks=%d deliveries=%d", payload.SessionID, output.Requirement.ID, len(output.Tasks), len(deliveries))
 
-	if s.pipelineService != nil && len(output.Tasks) > 0 {
-		result, pipelineErr := s.pipelineService.CreatePipeline(context.Background(), output.Tasks)
-		if pipelineErr != nil {
-			log.Printf("[pipeline] bitable creation failed: session_id=%s err=%v", payload.SessionID, pipelineErr)
-		} else {
-			log.Printf("[pipeline] bitable created: session_id=%s table_url=%s records=%d", payload.SessionID, result.TableURL, len(result.RecordIDs))
-		}
-	}
-
 	return nil
 }
 

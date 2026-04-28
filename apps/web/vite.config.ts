@@ -8,6 +8,13 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      // api-ts服务接口（AI、飞书业务、OpenAPI等）
+      '/api2': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api2/, '/api')
+      },
+      // Go服务接口（核心业务、登录、用户等）
       '/api': {
         target: apiProxyTarget,
         changeOrigin: true,

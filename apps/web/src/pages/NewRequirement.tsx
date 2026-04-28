@@ -75,6 +75,7 @@ export default function NewRequirement() {
     setSubmitting(true)
     try {
       let docUrl = ''
+      let swaggerUrl = ''
       const description = formData['description'] || ''
       const isInterfaceIntegration = businessType === '接口对接'
       
@@ -153,8 +154,9 @@ export default function NewRequirement() {
                     
                   case 'done':
                     // 完成所有
-                    if (data.content) {
-                      // 从内容中提取文档链接
+                    // docUrl 可能从 tool_result 中获取，这里只从 content 中提取作为备用
+                    if (data.content && !docUrl) {
+                      // 从内容中提取文档链接作为备用
                       const docMatch = data.content.match(/https:\/\/feishu\.cn\/docx\/[a-zA-Z0-9_-]+/)
                       if (docMatch) {
                         docUrl = docMatch[0]
@@ -162,8 +164,8 @@ export default function NewRequirement() {
                     }
                     setAiChainItems([{
                       key: 'step_0',
-                      title: docUrl ? '✅ 文档生成完成' : '📝 处理完成',
-                      description: docUrl ? `文档链接: ${docUrl}` : 'AI 处理已完成',
+                      title: docUrl || swaggerUrl ? '✅ 文档生成完成' : '📝 处理完成',
+                      description: docUrl ? `文档链接: ${docUrl}` : swaggerUrl ? `Swagger: ${swaggerUrl}` : 'AI 处理已完成',
                       status: 'success' as const,
                     }])
                     break
@@ -176,6 +178,19 @@ export default function NewRequirement() {
                       description: data.message,
                       status: 'error' as const,
                     }])
+                    break
+                    
+                  case 'tool_result':
+                    console.log('[DEBUG] tool_result event:', JSON.stringify(data))
+                    // 提取 swaggerUrl（Swagger UI 页面链接）
+                    if (data.name === 'saveOpenApiSpec' && data.result?.swaggerUrl) {
+                      swaggerUrl = data.result.swaggerUrl
+                      console.log('[DEBUG] swaggerUrl extracted:', swaggerUrl)
+                    }
+                    // 提取飞书文档链接
+                    if (data.name === 'createFeishuDocument' && data.result?.url) {
+                      docUrl = data.result.url
+                    }
                     break
                 }
               } catch (e) {
@@ -225,6 +240,14 @@ export default function NewRequirement() {
           messageContent += `\n📄 API 设计文档：${docUrl}\n`
         }
         
+        // 如果生成了 Swagger UI，添加链接
+        if (swaggerUrl) {
+          messageContent += `\n🔧 Swagger UI 接口调试：${swaggerUrl}\n`
+        }
+        
+        console.log('[DEBUG] 发送飞书消息前检查 - docUrl:', docUrl, 'swaggerUrl:', swaggerUrl)
+        console.log('[DEBUG] 消息内容:', messageContent)
+        
         messageContent += `\n请及时查看并处理！`
         
         const content = JSON.stringify({ text: messageContent })
@@ -245,7 +268,10 @@ export default function NewRequirement() {
 
       let alertMsg = `需求已提交！\n已通知 ${leaders.length} 位团队负责人`
       if (docUrl) {
-        alertMsg += `\n\nAI 已自动生成 API 设计文档：${docUrl}`
+        alertMsg += `\n\n📄 AI 已自动生成 API 设计文档：${docUrl}`
+      }
+      if (swaggerUrl) {
+        alertMsg += `\n\n🔧 Swagger UI：${swaggerUrl}`
       }
       alert(alertMsg)
     } catch (err) {

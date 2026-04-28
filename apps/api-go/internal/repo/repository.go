@@ -83,6 +83,7 @@ func (r *Repository) AutoMigrate(ctx context.Context) error {
 		&model.RoleOwner{},
 		&model.KnowledgeSource{},
 		&model.MessageDelivery{},
+		&model.OpenAPISpec{},
 		&model.PipelineTemplate{},
 		&model.PipelineRun{},
 		&model.StageRun{},
@@ -469,6 +470,16 @@ func (r *Repository) SearchKnowledgeSources(ctx context.Context, query string, l
 	return items, err
 }
 
+// OpenAPISpec CRUD
+
+func (r *Repository) CreateOpenAPISpec(ctx context.Context, spec *model.OpenAPISpec) error {
+	return r.db.WithContext(ctx).Create(spec).Error
+}
+
+func (r *Repository) GetOpenAPISpec(ctx context.Context, id string) (model.OpenAPISpec, error) {
+	var spec model.OpenAPISpec
+	err := r.db.WithContext(ctx).First(&spec, "id = ?", id).Error
+	return spec, err
 func (r *Repository) seedPipelineTemplatesTx(ctx context.Context, tx *gorm.DB) error {
 	var count int64
 	if err := tx.WithContext(ctx).Model(&model.PipelineTemplate{}).Count(&count).Error; err != nil {

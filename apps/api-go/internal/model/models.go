@@ -394,3 +394,11 @@ type MessageDelivery struct {
 	RawPayload string    `gorm:"type:text"`
 	CreatedAt  time.Time `gorm:"autoCreateTime"`
 }
+
+type OpenAPISpec struct {
+	ID        string `gorm:"primaryKey;size:128"`
+	Title     string `gorm:"size:255"`
+	SpecJSON  string `gorm:"type:text;not null"`
+	SwaggerURL string `gorm:"size:512"`
+	BaseModel
+}

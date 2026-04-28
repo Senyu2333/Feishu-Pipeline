@@ -16,6 +16,7 @@ type Dependencies struct {
 	TaskController     *controller.TaskController
 	AdminController    *controller.AdminController
 	PipelineController *controller.PipelineController
+	OpenAPIController  *controller.OpenAPIController
 	AuthService        *service.AuthService
 }
 
@@ -67,6 +68,14 @@ func New(deps Dependencies) *gin.Engine {
 	authenticated.GET("/git-deliveries/:deliveryID", deps.PipelineController.GetGitDelivery)
 	authenticated.POST("/checkpoints/:checkpointID/approve", deps.PipelineController.ApproveCheckpoint)
 	authenticated.POST("/checkpoints/:checkpointID/reject", deps.PipelineController.RejectCheckpoint)
+
+	// OpenAPI Spec 接口（需要认证）
+	authenticated.POST("/openapi/specs", deps.OpenAPIController.SaveSpec)
+	authenticated.GET("/openapi/specs/:specId", deps.OpenAPIController.GetSpec)
+
+	// OpenAPI Spec 接口（不需要认证，供 AI 工具调用）
+	engine.POST("/public/openapi/specs", deps.OpenAPIController.SaveSpecPublic)
+	engine.GET("/public/openapi/specs/:specId", deps.OpenAPIController.GetSpecPublic)
 
 	return engine
 }

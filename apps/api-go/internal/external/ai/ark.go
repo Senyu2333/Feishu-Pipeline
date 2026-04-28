@@ -10,9 +10,17 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+// TokenUsage token使用统计
+type TokenUsage struct {
+	InputTokens  int
+	OutputTokens int
+	TotalTokens  int
+	Raw          map[string]any
+}
+
 // Client AI 客户端接口
 type Client interface {
-	Generate(ctx context.Context, systemPrompt string, userPrompt string) (string, error)
+	Generate(ctx context.Context, systemPrompt string, userPrompt string) (content string, usage TokenUsage, err error)
 	// GenerateStream 流式生成，每个 token 写入 ch，结束后关闭 ch
 	GenerateStream(ctx context.Context, systemPrompt string, userPrompt string, ch chan<- string) error
 }
@@ -50,19 +58,25 @@ func NewArkClient(ctx context.Context, cfg ArkConfig) (*ArkClient, error) {
 	return &ArkClient{model: model}, nil
 }
 
-func (c *ArkClient) Generate(ctx context.Context, systemPrompt string, userPrompt string) (string, error) {
+func (c *ArkClient) Generate(ctx context.Context, systemPrompt string, userPrompt string) (string, TokenUsage, error) {
 	message, err := c.model.Generate(ctx, []*schema.Message{
 		schema.SystemMessage(systemPrompt),
 		schema.UserMessage(userPrompt),
 	})
 	if err != nil {
-		return "", fmt.Errorf("generate with ark: %w", err)
+		return "", TokenUsage{}, fmt.Errorf("generate with ark: %w", err)
 	}
 	content := strings.TrimSpace(message.Content)
 	if content == "" {
-		return "", fmt.Errorf("ark returned empty content (reasoning_content may be non-empty)")
+		return "", TokenUsage{}, fmt.Errorf("ark returned empty content (reasoning_content may be non-empty)")
 	}
-	return content, nil
+
+	// 暂时返回空的Usage，待后续eino库支持后再完善
+	usage := TokenUsage{
+		Raw: map[string]any{"note": "token usage not yet supported by current eino version"},
+	}
+
+	return content, usage, nil
 }
 
 // GenerateStream 调用 Ark Stream 接口，逐 token 发送到 ch

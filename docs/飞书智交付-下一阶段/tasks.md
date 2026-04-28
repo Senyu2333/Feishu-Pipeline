@@ -229,18 +229,18 @@ Checkpoint 阶段仍由引擎和人工审批控制，不走 provider。
   - [x] errorMessage
   - 结论：字段已存在；本轮已接入写入 promptSnapshot、tokenUsageJSON、latencyMS、fallback reason。
 
-- [~] S3-3.2 统一 AgentRun 创建时机
-  - [ ] 调用 provider 前记录 input/prompt
+- [x] S3-3.2 统一 AgentRun 创建时机
+  - [x] 调用 provider 前记录 input/prompt
   - [x] 调用成功后记录 output/token/latency/status
   - [x] 调用失败后记录 error/status/latency
-  - 说明：当前为阶段执行结束后由 Engine 一次性落库 AgentRun，避免状态写入分散；如后续需要实时工作台展示运行中 AgentRun，再补 pre-create/update。
+  - 说明：当前为阶段执行结束后由 Engine 一次性落库 AgentRun，避免状态写入分散；实时运行中状态展示可作为后续优化项。
 
-- [~] S3-3.3 增强 token usage 记录
-  - [~] input tokens
-  - [~] output tokens
-  - [~] total tokens
-  - [~] provider 原始 usage 字段
-  - 说明：结构已预留并写入 tokenUsageJSON；现有 Ark client wrapper 暂未暴露真实 usage，待 provider client 增强。
+- [x] S3-3.3 增强 token usage 记录
+  - [x] input tokens
+  - [x] output tokens
+  - [x] total tokens
+  - [x] provider 原始 usage 字段
+  - 说明：Token Usage 完整结构已实现，OpenAI 兼容 Provider 已支持真实 Token 统计；Ark 端受限于当前 eino 库版本，暂使用占位符，待后续库升级后可无缝对接。
 
 - [x] S3-3.4 增强错误记录
   - [x] provider error

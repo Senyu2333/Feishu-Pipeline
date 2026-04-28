@@ -214,7 +214,7 @@ func composeOutput(state *pipelineState) PublishOutput {
 }
 
 func normalizeWithLLM(ctx context.Context, client ai.Client, state *pipelineState) (normalizedRequirement, error) {
-	raw, err := client.Generate(
+	raw, _, err := client.Generate(
 		ctx,
 		buildNormalizeSystemPrompt(),
 		buildNormalizeUserPrompt(sessionTitle(state), conversationFromMessages(state.Input.Session.Messages), state.Input.Knowledge),
@@ -231,7 +231,7 @@ func normalizeWithLLM(ctx context.Context, client ai.Client, state *pipelineStat
 }
 
 func splitTasksWithLLM(ctx context.Context, client ai.Client, state *pipelineState) ([]model.Task, error) {
-	raw, err := client.Generate(
+	raw, _, err := client.Generate(
 		ctx,
 		buildSplitSystemPrompt(),
 		buildSplitUserPrompt(state.Normalized, state.ReferencedKnowledge, state.Input.RoleMappings),
@@ -273,7 +273,7 @@ func splitTasksWithLLM(ctx context.Context, client ai.Client, state *pipelineSta
 }
 
 func fillNotifyContentWithLLM(ctx context.Context, client ai.Client, state *pipelineState) error {
-	raw, err := client.Generate(
+	raw, _, err := client.Generate(
 		ctx,
 		buildNotifySystemPrompt(),
 		buildNotifyUserPrompt(state.Normalized.Title, state.Normalized.Summary, state.Tasks),

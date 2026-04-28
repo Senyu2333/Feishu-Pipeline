@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"feishu-pipeline/apps/api-go/internal/external/ai"
 	"feishu-pipeline/apps/api-go/internal/model"
 )
 
@@ -61,7 +62,7 @@ type AgentObservation struct {
 }
 
 type TextGenerator interface {
-	Generate(ctx context.Context, systemPrompt string, userPrompt string) (string, error)
+	Generate(ctx context.Context, systemPrompt string, userPrompt string) (content string, usage ai.TokenUsage, err error)
 }
 
 type TextGenerationProvider struct {
@@ -93,11 +94,25 @@ func (p *TextGenerationProvider) Generate(ctx context.Context, req AgentProvider
 		return AgentProviderResponse{}, fmt.Errorf("agent provider is not configured")
 	}
 	startedAt := time.Now()
-	content, err := p.generator.Generate(ctx, req.SystemPrompt, req.UserPrompt)
+	content, usage, err := p.generator.Generate(ctx, req.SystemPrompt, req.UserPrompt)
 	latency := time.Since(startedAt).Milliseconds()
 	if err != nil {
 		return AgentProviderResponse{LatencyMS: latency}, err
 	}
 	raw, _ := json.Marshal(map[string]any{"content": content})
-	return AgentProviderResponse{Content: content, RawJSON: string(raw), LatencyMS: latency}, nil
+
+	// 转换ai.TokenUsage到pipeline.TokenUsage
+	tokenUsage := TokenUsage{
+		InputTokens:  usage.InputTokens,
+		OutputTokens: usage.OutputTokens,
+		TotalTokens:  usage.TotalTokens,
+		Raw:          usage.Raw,
+	}
+
+	return AgentProviderResponse{
+		Content:    content,
+		RawJSON:    string(raw),
+		LatencyMS:  latency,
+		TokenUsage: tokenUsage,
+	}, nil
 }

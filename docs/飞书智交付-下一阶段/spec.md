@@ -171,7 +171,7 @@
 - Stage Handler 拆分后测试：正常
 - timeline/current 聚合 API：测试通过
 - 真实 AI Agent 执行：已用 Ark / `doubao-seed-2-0-lite-260215` 完成真实配置联调
-- 多 Provider 切换：已支持统一 provider 抽象并预留第二 provider 配置；第二个真实 provider adapter 尚未实现
+- 多 Provider 切换：已支持统一 provider 抽象，已实现 Ark + OpenAI 兼容双 Provider，运行时可配置切换
 - GitDelivery 交付闭环：基础记录与查询 API 已完成；远程 push/PR 仍未启用
 - timeline/current nextAction：已完成
 - 前端工作台消费 timeline/current：`Workflows`、`Approvals`、`Delivery` 已接入真实 Pipeline API
@@ -203,7 +203,7 @@
 - 有 Ark AI client 时通过 `TextGenerationProvider` 调用统一接口
 - AgentRun 会记录 provider、model、prompt、input、output、latency、fallback reason
 
-仍未完成的是：真实 Ark Key 联调、真实 token usage 获取、第二个模型提供方的 adapter。
+仍未完成的是：真实 Ark Key 联调（Token Usage 受 eino 库限制暂未支持）；第二个模型提供方的 adapter 已实现（OpenAI 兼容）。
 
 ### 4.2 Prompt 与 Agent 角色定义还不成体系
 
@@ -238,7 +238,7 @@
 - schema validation error
 - provider error
 
-本轮已能记录上述字段中的 prompt、input、output、latency、status、error、fallback reason。token usage 结构已预留，但现有 Ark client wrapper 暂时无法取得真实 token 统计，后续需要 provider client 暴露 usage。
+本轮已能记录上述所有字段：prompt、input、output、latency、status、error、fallback reason、token usage。Token Usage 完整结构已实现，OpenAI 兼容 Provider 已支持真实 Token 统计；现有 Ark client wrapper 受 eino 库版本限制暂时无法取得真实 token 统计，后续库升级后可无缝对接。
 
 ### 4.4 GitDelivery 基础闭环已完成，远程交付仍未启用
 

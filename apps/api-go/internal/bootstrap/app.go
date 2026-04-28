@@ -39,21 +39,44 @@ func NewApplication(ctx context.Context, configPath string, version string) (*Ap
 	}
 
 	var aiClient ai.Client
-	if cfg.AI.Provider == "ark" && cfg.AI.Ark.APIKey != "" {
-		arkClient, err := ai.NewArkClient(ctx, ai.ArkConfig{
-			BaseURL:     cfg.AI.Ark.BaseURL,
-			Model:       cfg.AI.Ark.Model,
-			APIKey:      cfg.AI.Ark.APIKey,
-			Temperature: cfg.AI.Ark.Temperature,
-			MaxTokens:   cfg.AI.Ark.MaxTokens,
-			Timeout:     time.Duration(cfg.AI.Ark.TimeoutSec) * time.Second,
-		})
-		if err != nil {
-			return nil, err
+	var aiModel string
+	switch cfg.AI.Provider {
+	case "ark":
+		if cfg.AI.Ark.APIKey != "" {
+			arkClient, err := ai.NewArkClient(ctx, ai.ArkConfig{
+				BaseURL:     cfg.AI.Ark.BaseURL,
+				Model:       cfg.AI.Ark.Model,
+				APIKey:      cfg.AI.Ark.APIKey,
+				Temperature: cfg.AI.Ark.Temperature,
+				MaxTokens:   cfg.AI.Ark.MaxTokens,
+				Timeout:     time.Duration(cfg.AI.Ark.TimeoutSec) * time.Second,
+			})
+			if err != nil {
+				return nil, err
+			}
+			aiClient = arkClient
+			aiModel = cfg.AI.Ark.Model
+			log.Printf("using ark ai provider, model: %s", aiModel)
+		} else {
+			log.Printf("ark ai disabled: api_key not configured")
 		}
-		aiClient = arkClient
-	} else {
-		log.Printf("ark ai disabled: provider=%s api_key_configured=%t", cfg.AI.Provider, cfg.AI.Ark.APIKey != "")
+	case "openai_compatible":
+		if cfg.AI.OpenAICompatible.APIKey != "" {
+			openaiClient := ai.NewOpenAIClient(ai.OpenAIConfig{
+				BaseURL:   cfg.AI.OpenAICompatible.BaseURL,
+				Model:     cfg.AI.OpenAICompatible.Model,
+				APIKey:    cfg.AI.OpenAICompatible.APIKey,
+				MaxTokens: cfg.AI.OpenAICompatible.MaxTokens,
+				Timeout:   time.Duration(cfg.AI.OpenAICompatible.TimeoutSec) * time.Second,
+			})
+			aiClient = openaiClient
+			aiModel = cfg.AI.OpenAICompatible.Model
+			log.Printf("using openai compatible ai provider, model: %s, base_url: %s", aiModel, cfg.AI.OpenAICompatible.BaseURL)
+		} else {
+			log.Printf("openai compatible ai disabled: api_key not configured")
+		}
+	default:
+		log.Printf("unknown ai provider: %s, ai features disabled", cfg.AI.Provider)
 	}
 
 	agentEngine, err := agent.NewEngine(aiClient)
@@ -83,7 +106,7 @@ func NewApplication(ctx context.Context, configPath string, version string) (*Ap
 	sessionService := service.NewSessionService(repository, authService, aiClient)
 	taskService := service.NewTaskService(repository, feishuClient)
 	adminService := service.NewAdminService(repository)
-	pipelineProvider := pipeline.NewTextGenerationProvider(cfg.AI.Provider, cfg.AI.Ark.Model, aiClient)
+	pipelineProvider := pipeline.NewTextGenerationProvider(cfg.AI.Provider, aiModel, aiClient)
 	pipelineExecutor := pipeline.NewSequentialExecutor(pipeline.WithAgentRunner(pipeline.NewAgentRunner(pipelineProvider, pipeline.DefaultPromptRegistry())))
 	pipelineService := service.NewPipelineService(repository, service.WithPipelineExecutor(pipelineExecutor))
 	publishService := service.NewPublishService(repository, authService, agentEngine, feishuClient, pipelineService)

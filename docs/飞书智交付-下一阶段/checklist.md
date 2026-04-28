@@ -50,10 +50,10 @@
 ### 2.2 当前已知缺口
 
 - [x] 真实 Agent Provider 已通过 Ark Key 联调
-- [!] 至少两个模型提供方的真实 adapter 与运行时切换尚未完成
+- [x] 至少两个模型提供方的真实 adapter 与运行时切换已完成（Ark + OpenAI 兼容）
 - [x] Prompt Registry 已形成基础实现
 - [x] Agent 输出 JSON schema 字段类型校验已补充
-- [!] AgentRun token usage 真实统计仍需 provider client 支持
+- [x] AgentRun token usage 真实统计已实现（Ark 端暂未支持原始返回，OpenAI 兼容端已完整支持）
 - [x] GitDelivery 基础交付记录闭环已实现
 - [x] GitDelivery 查询 API 已实现
 - [x] timeline/current 已包含 delivery 和 nextAction

@@ -20,6 +20,7 @@ type EngineRepository interface {
 	UpdatePipelineRunCurrentStage(context.Context, string, string) error
 	UpdatePipelineRunStatus(context.Context, string, model.PipelineRunStatus) error
 	CreateAgentRun(context.Context, *model.AgentRun) error
+	UpdateAgentRun(context.Context, *model.AgentRun) error
 	SaveStageRunOutput(context.Context, string, string, string) error
 	CreateArtifact(context.Context, *model.Artifact) error
 	CreateGitDelivery(context.Context, *model.GitDelivery) error

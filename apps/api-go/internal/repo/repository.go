@@ -746,6 +746,10 @@ func (r *Repository) CreateAgentRun(ctx context.Context, item *model.AgentRun) e
 	return r.db.WithContext(ctx).Create(item).Error
 }
 
+func (r *Repository) UpdateAgentRun(ctx context.Context, item *model.AgentRun) error {
+	return r.db.WithContext(ctx).Save(item).Error
+}
+
 func (r *Repository) ListAgentRunsByPipelineRunID(ctx context.Context, runID string) ([]model.AgentRun, error) {
 	var items []model.AgentRun
 	err := r.db.WithContext(ctx).Where("pipeline_run_id = ?", runID).Order("created_at ASC").Find(&items).Error

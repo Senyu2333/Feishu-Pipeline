@@ -16,6 +16,7 @@ type Dependencies struct {
 	TaskController     *controller.TaskController
 	AdminController    *controller.AdminController
 	PipelineController *controller.PipelineController
+	OpenAPIController  *controller.OpenAPIController
 	AuthService        *service.AuthService
 }
 
@@ -49,6 +50,14 @@ func New(deps Dependencies) *gin.Engine {
 	adminGroup.POST("/knowledge/sync", deps.AdminController.SyncKnowledge)
 
 	authenticated.POST("/pipeline/create", deps.PipelineController.Create)
+
+	// OpenAPI Spec 接口（需要认证）
+	authenticated.POST("/openapi/specs", deps.OpenAPIController.SaveSpec)
+	authenticated.GET("/openapi/specs/:specId", deps.OpenAPIController.GetSpec)
+
+	// OpenAPI Spec 接口（不需要认证，供 AI 工具调用）
+	engine.POST("/public/openapi/specs", deps.OpenAPIController.SaveSpecPublic)
+	engine.GET("/public/openapi/specs/:specId", deps.OpenAPIController.GetSpecPublic)
 
 	return engine
 }

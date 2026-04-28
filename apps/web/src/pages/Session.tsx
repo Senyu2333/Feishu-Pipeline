@@ -3,9 +3,10 @@ import { useParams } from '@tanstack/react-router'
 import { Bubble, Sender } from '@ant-design/x'
 import type { BubbleListProps } from '@ant-design/x'
 import XMarkdown from '@ant-design/x-markdown'
-import { Avatar } from 'antd'
+import { Avatar, Button, message } from 'antd'
 import { UserOutlined, RobotOutlined } from '@ant-design/icons'
 import Sidebar from '../components/Sidebar'
+import { fetchPipelineRuns } from '../lib/pipeline'
 
 interface Message {
   id: string
@@ -21,6 +22,9 @@ interface SessionDetail {
     status: string
   }
   messages: Message[]
+  tasks: Array<{
+    id: string
+  }>
 }
 
 interface CurrentUser {
@@ -41,6 +45,7 @@ export default function Session() {
   const [loading, setLoading] = useState(true)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [resolvingApproval, setResolvingApproval] = useState(false)
   const [convCollapsed, setConvCollapsed] = useState(false)
   const sidebarWidth = convCollapsed ? 80 : 336 // 折叠 80，展开 80+256=336
   // 防止首条消息重复发送
@@ -237,6 +242,25 @@ export default function Session() {
   }
 
   const sidebarProps = { convCollapsed, onConvCollapse: setConvCollapsed }
+  const approvalTaskID = session?.tasks?.[0]?.id || ''
+  const handleGoToApproval = useCallback(async () => {
+    if (!session?.session.id) return
+    setResolvingApproval(true)
+    try {
+      const runs = await fetchPipelineRuns()
+      const sessionRuns = runs.filter(item => item.sourceSessionId === session.session.id)
+      if (sessionRuns.length === 0) {
+        message.warning('当前会话还没有对应的审批流程')
+        return
+      }
+      const targetRun = sessionRuns.find(item => item.status === 'waiting_approval') || sessionRuns[0]
+      window.location.assign(`/approvals/${encodeURIComponent(targetRun.id)}`)
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '获取审批上下文失败')
+    } finally {
+      setResolvingApproval(false)
+    }
+  }, [session?.session.id])
 
   if (loading) {
     return (
@@ -269,7 +293,18 @@ export default function Session() {
       >
         {/* Header */}
         <div className="h-14 px-6 flex items-center border-b border-slate-100 bg-white/80 backdrop-blur flex-shrink-0">
-          <h1 className="text-base font-semibold text-slate-800 truncate">{session.session.title}</h1>
+          <div className="flex w-full items-center justify-between gap-3">
+            <h1 className="text-base font-semibold text-slate-800 truncate">{session.session.title}</h1>
+            {approvalTaskID ? (
+              <Button
+                size="small"
+                loading={resolvingApproval}
+                onClick={() => void handleGoToApproval()}
+              >
+                进入审批
+              </Button>
+            ) : null}
+          </div>
         </div>
 
         {/* 消息区域 */}

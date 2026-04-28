@@ -45,6 +45,12 @@ const approvalsRoute = createRoute({
   component: Approvals,
 })
 
+const approvalsRunRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/approvals/$runId',
+  component: Approvals,
+})
+
 const deliveryRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/delivery',
@@ -75,7 +81,7 @@ const swaggerRoute = createRoute({
   component: APIDocument,
 })
 
-const routeTree = rootRoute.addChildren([indexRoute, newRequirementRoute, workflowsRoute, monitoringRoute, approvalsRoute, deliveryRoute, authCallbackRoute, sessionRoute, debugRoute, swaggerRoute])
+const routeTree = rootRoute.addChildren([indexRoute, newRequirementRoute, workflowsRoute, monitoringRoute, approvalsRoute, approvalsRunRoute, deliveryRoute, authCallbackRoute, sessionRoute, debugRoute, swaggerRoute])
 const router = createRouter({ routeTree })
 
 declare module '@tanstack/react-router' {

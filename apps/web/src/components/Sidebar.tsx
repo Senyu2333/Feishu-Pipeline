@@ -8,6 +8,7 @@ const mainNavItems = [
   { icon: 'monitoring', label: 'Monitoring', to: '/monitoring' },
   { icon: 'fact_check', label: 'Approvals', to: '/approvals' },
   { icon: 'local_shipping', label: 'Delivery', to: '/delivery' },
+  { icon: 'inventory', label: 'Assets', to: '/assets' },
 ]
 
 interface User {

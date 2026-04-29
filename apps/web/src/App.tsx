@@ -10,6 +10,7 @@ import AuthCallback from './pages/AuthCallback'
 import Session from './pages/Session'
 import Debug from './pages/Debug'
 import { APIDocument } from './pages/Swagger'
+import Assets from './pages/Assets'
 
 
 
@@ -24,6 +25,11 @@ const indexRoute = createRoute({
 const newRequirementRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/new-requirement',
+  validateSearch: (search: Record<string, unknown>): { projectId?: string } => {
+    return {
+      projectId: search.projectId as string | undefined,
+    }
+  },
   component: NewRequirement,
 })
 
@@ -75,7 +81,13 @@ const swaggerRoute = createRoute({
   component: APIDocument,
 })
 
-const routeTree = rootRoute.addChildren([indexRoute, newRequirementRoute, workflowsRoute, monitoringRoute, approvalsRoute, deliveryRoute, authCallbackRoute, sessionRoute, debugRoute, swaggerRoute])
+const assetsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/assets',
+  component: Assets,
+})
+
+const routeTree = rootRoute.addChildren([indexRoute, newRequirementRoute, workflowsRoute, monitoringRoute, approvalsRoute, deliveryRoute, authCallbackRoute, sessionRoute, debugRoute, swaggerRoute, assetsRoute])
 const router = createRouter({ routeTree })
 
 declare module '@tanstack/react-router' {

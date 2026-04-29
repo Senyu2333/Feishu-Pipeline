@@ -354,6 +354,37 @@ app.post("/api/openapi", async (request: FastifyRequest, reply: FastifyReply) =>
   }
 })
 
+// 获取 OpenAPI 规范列表（供资产页面使用，转发到 Go 后端）
+app.get("/api/openapi/specs", async (request: FastifyRequest, reply: FastifyReply) => {
+  try {
+    // 调用 Go 后端获取所有 specs
+    const response = await axios.get(`${GO_API_BASE}/public/openapi/specs`, {
+      headers: { 'Accept': 'application/json' }
+    })
+    
+    return reply.send(response.data)
+  } catch (err: any) {
+    console.error('[listOpenApiSpecs] Error:', err.response?.data || err.message)
+    return reply.status(500).send({ success: false, error: err.message })
+  }
+})
+
+// 更新 OpenAPI 规范的关联信息（转发到 Go 后端）
+app.put("/api/openapi/:specId", async (request: FastifyRequest, reply: FastifyReply) => {
+  try {
+    const { specId } = request.params as any
+    
+    const response = await axios.put(`${GO_API_BASE}/public/openapi/specs/${specId}`, request.body, {
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' }
+    })
+    
+    return reply.send(response.data)
+  } catch (err: any) {
+    console.error('[updateOpenApiSpec] Error:', err.response?.data || err.message)
+    return reply.status(500).send({ success: false, error: err.message })
+  }
+})
+
 // 获取 OpenAPI 规范（供 Swagger UI 使用，转发到 Go 后端）
 app.get("/api/openapi/:specId", async (request: FastifyRequest, reply: FastifyReply) => {
   try {

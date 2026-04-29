@@ -18,7 +18,7 @@ export function APIDocument() {
     }
 
     return (
-        <div style={{ padding: '24px', minHeight: '100vh' }}>
+        <div style={{ padding: '24px', position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, overflowY: 'auto' }}>
             <SwaggerUI {...swaggerProps} />
         </div>
     )

@@ -1,9 +1,12 @@
 import { Card, Form, Input, Select, DatePicker, Button, Space, Tag, Timeline, Drawer, List, Spin } from 'antd'
 import { useState, useEffect } from 'react'
+import { useNavigate, useSearch } from '@tanstack/react-router'
 import Sidebar from '../components/Sidebar'
 
-// TS 后端 API 地址
-const API_BASE = 'http://localhost:3001'
+// TS 后端 API 地址（飞书相关接口）
+const API_BASE_TS = '/api2'
+// Go 后端 API 地址（OpenAPI 相关接口）
+const API_BASE_GO = ''
 const USER_TOKEN_KEY = 'feishu_user_token'
 const USER_OPEN_ID_KEY = 'feishu_user_open_id'
 
@@ -15,6 +18,8 @@ interface DepartmentInfo {
 }
 
 export default function NewRequirement() {
+  const navigate = useNavigate()
+  const searchParams = useSearch({ from: '/new-requirement' })
   const [form] = Form.useForm()
   const [teams, setTeams] = useState<{ value: string; label: string }[]>([])
   const [selectedTeams, setSelectedTeams] = useState<string[]>([])
@@ -24,6 +29,41 @@ export default function NewRequirement() {
   const [loadingLeaders, setLoadingLeaders] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [generatingDoc, setGeneratingDoc] = useState(false)
+  
+  // 加载项目列表
+  const loadProjects = async () => {
+    setLoadingProjects(true)
+    try {
+      const res = await fetch(`${API_BASE_GO}/api/projects`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.data) {
+          setProjects(data.data.map((p: any) => ({ id: p.ID || p.id, title: p.Title || p.title || '未命名项目' })))
+        }
+      }
+    } catch (err) {
+      console.error('加载项目列表失败:', err)
+    } finally {
+      setLoadingProjects(false)
+    }
+  }
+
+  // 项目相关状态
+  const [projects, setProjects] = useState<{ id: string; title: string }[]>([])
+  const [loadingProjects, setLoadingProjects] = useState(false)
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
+
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const projectId = urlParams.get('projectId')
+    if (projectId) {
+      setSelectedProjectId(projectId)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadProjects()
+  }, [])
   
   // AI 步骤项类型
   interface AiChainItem {
@@ -76,6 +116,7 @@ export default function NewRequirement() {
     try {
       let docUrl = ''
       let swaggerUrl = ''
+      let specId = ''
       const description = formData['description'] || ''
       const isInterfaceIntegration = businessType === '接口对接'
       
@@ -110,7 +151,7 @@ export default function NewRequirement() {
           }
           
           // 调用 SSE AI 生成文档
-          const aiRes = await fetch(`${API_BASE}/api/ai/chat/stream`, {
+          const aiRes = await fetch(`${API_BASE_TS}/api/ai/chat/stream`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
@@ -185,7 +226,12 @@ export default function NewRequirement() {
                     // 提取 swaggerUrl（Swagger UI 页面链接）
                     if (data.name === 'saveOpenApiSpec' && data.result?.swaggerUrl) {
                       swaggerUrl = data.result.swaggerUrl
-                      console.log('[DEBUG] swaggerUrl extracted:', swaggerUrl)
+                      // 从 swaggerUrl 中解析 specId，格式: /swagger?specId=spec_xxx
+                      const match = swaggerUrl.match(/specId=([^&]+)/)
+                      if (match) {
+                        specId = match[1]
+                      }
+                      console.log('[DEBUG] swaggerUrl extracted:', swaggerUrl, 'specId:', specId)
                     }
                     // 提取飞书文档链接
                     if (data.name === 'createFeishuDocument' && data.result?.url) {
@@ -253,7 +299,7 @@ export default function NewRequirement() {
         const content = JSON.stringify({ text: messageContent })
         const uuid = crypto.randomUUID()
 
-        await fetch(`${API_BASE}/api/feishu/send-message`, {
+        await fetch(`${API_BASE_TS}/api/feishu/send-message`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -265,8 +311,54 @@ export default function NewRequirement() {
           }),
         })
       }
-
+      
+      // 3. 更新资产的关联信息（如果生成了 swaggerUrl 且有选中的飞书文档）
+      if (specId) {
+        try {
+          const updateData: any = {
+            title: requirementTitle,
+            description: description,
+          }
+          // 关联项目
+          if (selectedProjectId) {
+            updateData.projectId = selectedProjectId
+          }
+          // 关联飞书文档
+          if (selectedDocUrls.length > 0) {
+            updateData.doc_urls = selectedDocUrls
+          }
+          await fetch(`${API_BASE_GO}/api/openapi/${specId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updateData),
+          })
+          console.log('[DEBUG] 资产关联信息已更新')
+        } catch (err) {
+          console.error('[DEBUG] 更新资产关联信息失败:', err)
+        }
+      }
+      
+      // 4. 如果选择了项目，创建项目-需求关联
+      if (selectedProjectId) {
+        try {
+          await fetch(`${API_BASE_GO}/api/projects/${selectedProjectId}/requirements`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: requirementTitle,
+              description: description,
+            }),
+          })
+          console.log('[DEBUG] 项目-需求关联已创建')
+        } catch (err) {
+          console.error('[DEBUG] 创建项目-需求关联失败:', err)
+        }
+      }
+      
       let alertMsg = `需求已提交！\n已通知 ${leaders.length} 位团队负责人`
+      if (selectedProjectId) {
+        alertMsg += `\n\n📁 已关联到项目`
+      }
       if (docUrl) {
         alertMsg += `\n\n📄 AI 已自动生成 API 设计文档：${docUrl}`
       }
@@ -274,6 +366,9 @@ export default function NewRequirement() {
         alertMsg += `\n\n🔧 Swagger UI：${swaggerUrl}`
       }
       alert(alertMsg)
+      
+      // 跳转到首页
+      navigate({ to: '/' })
     } catch (err) {
       console.error('提交失败:', err)
       alert('提交失败，请重试')
@@ -299,9 +394,9 @@ export default function NewRequirement() {
     setLoadingSpaces(true)
     try {
       const userToken = localStorage.getItem(USER_TOKEN_KEY) || ''
-      const url = folderToken 
-        ? `${API_BASE}/api/feishu/wiki-spaces?user_token=${encodeURIComponent(userToken)}&folder_token=${encodeURIComponent(folderToken)}`
-        : `${API_BASE}/api/feishu/wiki-spaces?user_token=${encodeURIComponent(userToken)}`
+      const url = folderToken
+        ? `${API_BASE_TS}/api/feishu/wiki-spaces?user_token=${encodeURIComponent(userToken)}&folder_token=${encodeURIComponent(folderToken)}`
+        : `${API_BASE_TS}/api/feishu/wiki-spaces?user_token=${encodeURIComponent(userToken)}`
       const res = await fetch(url)
       const data = await res.json()
       if (data.success && data.data?.data?.files) {
@@ -376,7 +471,7 @@ export default function NewRequirement() {
             params.set('page_token', pageToken)
           }
           
-          const res = await fetch(`${API_BASE}/api/feishu/department-children?${params.toString()}`)
+          const res = await fetch(`${API_BASE_TS}/api/feishu/department-children?${params.toString()}`)
           const data = await res.json()
           
           if (data.success && data.data?.data?.items) {
@@ -409,7 +504,7 @@ export default function NewRequirement() {
         
         for (let i = 0; i < allDeptIds.length; i += batchSize) {
           const batchIds = allDeptIds.slice(i, i + batchSize)
-          const batchRes = await fetch(`${API_BASE}/api/feishu/batch-departments`, {
+          const batchRes = await fetch(`${API_BASE_TS}/api/feishu/batch-departments`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
@@ -480,7 +575,7 @@ export default function NewRequirement() {
         }
 
         const userToken = localStorage.getItem(USER_TOKEN_KEY) || ''
-        const res = await fetch(`${API_BASE}/api/feishu/batch-user-names`, {
+        const res = await fetch(`${API_BASE_TS}/api/feishu/batch-user-names`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -571,6 +666,18 @@ export default function NewRequirement() {
               </Form.Item>
               <Form.Item label={<span className="text-xs font-semibold text-on-surface-variant tracking-wider">截止时间</span>} name="target_date" className="mb-0" rules={[{ required: true, message: '请选择截止时间' }]}>
                 <DatePicker className="w-full !rounded-lg" placeholder="截止日期" size="small" />
+              </Form.Item>
+              <Form.Item label={<span className="text-xs font-semibold text-on-surface-variant tracking-wider">关联项目</span>} className="mb-0">
+                <Select
+                  placeholder="选择项目（可选）"
+                  allowClear
+                  value={selectedProjectId}
+                  onChange={setSelectedProjectId}
+                  options={projects.map(p => ({ value: p.id, label: p.title }))}
+                  loading={loadingProjects}
+                  className="!rounded-lg"
+                  size="small"
+                />
               </Form.Item>
             </div>
 

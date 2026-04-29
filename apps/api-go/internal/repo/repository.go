@@ -480,6 +480,8 @@ func (r *Repository) GetOpenAPISpec(ctx context.Context, id string) (model.OpenA
 	var spec model.OpenAPISpec
 	err := r.db.WithContext(ctx).First(&spec, "id = ?", id).Error
 	return spec, err
+}
+
 func (r *Repository) seedPipelineTemplatesTx(ctx context.Context, tx *gorm.DB) error {
 	var count int64
 	if err := tx.WithContext(ctx).Model(&model.PipelineTemplate{}).Count(&count).Error; err != nil {
@@ -742,6 +744,10 @@ func (r *Repository) ListCheckpointsByPipelineRunID(ctx context.Context, runID s
 
 func (r *Repository) CreateAgentRun(ctx context.Context, item *model.AgentRun) error {
 	return r.db.WithContext(ctx).Create(item).Error
+}
+
+func (r *Repository) UpdateAgentRun(ctx context.Context, item *model.AgentRun) error {
+	return r.db.WithContext(ctx).Save(item).Error
 }
 
 func (r *Repository) ListAgentRunsByPipelineRunID(ctx context.Context, runID string) ([]model.AgentRun, error) {

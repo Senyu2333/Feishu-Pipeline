@@ -51,6 +51,12 @@ const approvalsRoute = createRoute({
   component: Approvals,
 })
 
+const approvalsRunRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/approvals/$runId',
+  component: Approvals,
+})
+
 const deliveryRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/delivery',

@@ -18,6 +18,7 @@ import {
   EditOutlined,
   CheckCircleOutlined,
 } from '@ant-design/icons'
+import { useParams } from '@tanstack/react-router'
 import { approveCheckpoint, fetchPipelineCurrent, fetchPipelineRuns, rejectCheckpoint } from '../lib/pipeline'
 
 const historyItems = [
@@ -45,6 +46,7 @@ const historyItems = [
 export default function Approvals() {
   // 左侧导航固定 80px
   const sidebarWidth = 80
+  const { runId: routeRunId } = useParams({ strict: false })
   const [comment, setComment] = useState('')
   const [runId, setRunID] = useState('')
   const [checkpointId, setCheckpointID] = useState('')
@@ -53,10 +55,72 @@ export default function Approvals() {
   const canSubmitDecision = useMemo(() => Boolean(runId && checkpointId && !submittingAction), [runId, checkpointId, submittingAction])
 
   useEffect(() => {
+    interface Envelope<T> {
+      data?: T
+      error?: string
+    }
+
+    interface TaskSummary {
+      id: string
+      sessionId: string
+    }
+
+    interface SessionDetail {
+      session: {
+        id: string
+      }
+      tasks: Array<{
+        id: string
+      }>
+    }
+
+    const request = async <T,>(path: string): Promise<T> => {
+      const res = await fetch(path, { credentials: 'include' })
+      const payload = await res.json().catch(() => ({})) as Envelope<T>
+      if (!res.ok) {
+        throw new Error(payload.error || `请求失败：${res.status}`)
+      }
+      if (payload.data === undefined) {
+        throw new Error('接口未返回 data')
+      }
+      return payload.data
+    }
+
+    const resolveRunIdBySessionID = async (sessionID: string): Promise<string> => {
+      const runs = await fetchPipelineRuns()
+      const sessionRuns = runs.filter(item => item.sourceSessionId === sessionID)
+      if (sessionRuns.length === 0) {
+        throw new Error('当前 task 对应会话尚未创建流水线运行')
+      }
+      return sessionRuns.find(item => item.status === 'waiting_approval')?.id || sessionRuns[0].id
+    }
+
     const resolveCheckpointContext = async () => {
       try {
-        const queryRunId = new URLSearchParams(window.location.search).get('runId')?.trim() || ''
-        let targetRunId = queryRunId
+        const query = new URLSearchParams(window.location.search)
+        const queryRunId = query.get('runId')?.trim() || ''
+        const queryTaskID = query.get('taskId')?.trim() || ''
+        const querySessionID = query.get('sessionId')?.trim() || ''
+        let targetRunId = (routeRunId || '').trim() || queryRunId
+
+        if (!targetRunId && queryTaskID) {
+          const task = await request<TaskSummary>(`/api/tasks/${encodeURIComponent(queryTaskID)}`)
+          if (!task.sessionId) {
+            throw new Error('task 未绑定 sessionId')
+          }
+          // 会话详情用于兜底校验 task 与 session 的绑定关系，并复用既有 /api/sessions/:id 接口。
+          const session = await request<SessionDetail>(`/api/sessions/${encodeURIComponent(task.sessionId)}`)
+          const belongsToSession = session.tasks.some(item => item.id === queryTaskID)
+          if (!belongsToSession) {
+            throw new Error('task 与 session 关联不一致')
+          }
+          targetRunId = await resolveRunIdBySessionID(task.sessionId)
+        }
+
+        if (!targetRunId && querySessionID) {
+          await request<SessionDetail>(`/api/sessions/${encodeURIComponent(querySessionID)}`)
+          targetRunId = await resolveRunIdBySessionID(querySessionID)
+        }
 
         if (!targetRunId) {
           const runs = await fetchPipelineRuns()
@@ -76,7 +140,7 @@ export default function Approvals() {
     }
 
     void resolveCheckpointContext()
-  }, [])
+  }, [routeRunId])
 
   const handleApprove = async () => {
     if (!runId || !checkpointId) {

@@ -27,6 +27,7 @@ type StageContext struct {
 	Artifacts   []model.Artifact
 	Checkpoints []model.Checkpoint
 	Input       map[string]any
+	AgentRunID  string // 预创建的AgentRun ID，为空则表示需要创建新的
 }
 
 func baseStagePayload(ctx StageContext) map[string]any {

@@ -138,7 +138,7 @@ func (s *SessionService) generateChatReply(ctx context.Context, sessionID string
 	systemPrompt := agent.BuildChatSystemPrompt()
 	userPrompt := agent.BuildChatUserPrompt(history, userMsg)
 
-	reply, err := s.aiClient.Generate(ctx, systemPrompt, userPrompt)
+	reply, _, err := s.aiClient.Generate(ctx, systemPrompt, userPrompt)
 	if err != nil {
 		log.Printf("[session %s] ai generate failed: %v", sessionID, err)
 		return draftAssistantReply(userMsg)

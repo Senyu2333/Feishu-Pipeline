@@ -108,7 +108,7 @@ func NewApplication(ctx context.Context, configPath string, version string) (*Ap
 	adminService := service.NewAdminService(repository)
 	pipelineProvider := pipeline.NewTextGenerationProvider(cfg.AI.Provider, aiModel, aiClient)
 	pipelineExecutor := pipeline.NewSequentialExecutor(pipeline.WithAgentRunner(pipeline.NewAgentRunner(pipelineProvider, pipeline.DefaultPromptRegistry())))
-	pipelineService := service.NewPipelineService(repository, service.WithPipelineExecutor(pipelineExecutor))
+	pipelineService := service.NewPipelineService(repository, feishuClient, service.WithPipelineExecutor(pipelineExecutor))
 	publishService := service.NewPublishService(repository, authService, agentEngine, feishuClient, pipelineService)
 	sessionService.SetPublisher(publishService)
 

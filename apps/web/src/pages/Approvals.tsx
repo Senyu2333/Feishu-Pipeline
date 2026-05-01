@@ -10,6 +10,7 @@ import {
   Badge,
   Space,
   message,
+  Tabs,
 } from 'antd'
 import {
   UserAddOutlined,
@@ -17,9 +18,85 @@ import {
   CloseOutlined,
   EditOutlined,
   CheckCircleOutlined,
+  CodeOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons'
 import { useParams } from '@tanstack/react-router'
-import { approveCheckpoint, fetchPipelineCurrent, fetchPipelineRuns, rejectCheckpoint } from '../lib/pipeline'
+import { approveCheckpoint, fetchPipelineCurrent, fetchPipelineRuns, fetchPipelineAgentRuns, rejectCheckpoint, type AgentRun } from '../lib/pipeline'
+
+type DiffLine = {
+  text: string
+  kind: 'context' | 'add' | 'remove'
+}
+
+function buildUnifiedDiff(before: string, after: string): DiffLine[] {
+  const a = (before || '').split('\n')
+  const b = (after || '').split('\n')
+  const n = a.length
+  const m = b.length
+  const dp: number[][] = Array.from({ length: n + 1 }, () => Array<number>(m + 1).fill(0))
+
+  for (let i = n - 1; i >= 0; i -= 1) {
+    for (let j = m - 1; j >= 0; j -= 1) {
+      if (a[i] === b[j]) {
+        dp[i][j] = dp[i + 1][j + 1] + 1
+      } else {
+        dp[i][j] = Math.max(dp[i + 1][j], dp[i][j + 1])
+      }
+    }
+  }
+
+  const lines: DiffLine[] = []
+  let i = 0
+  let j = 0
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      lines.push({ text: a[i], kind: 'context' })
+      i += 1
+      j += 1
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      lines.push({ text: a[i], kind: 'remove' })
+      i += 1
+    } else {
+      lines.push({ text: b[j], kind: 'add' })
+      j += 1
+    }
+  }
+  while (i < n) {
+    lines.push({ text: a[i], kind: 'remove' })
+    i += 1
+  }
+  while (j < m) {
+    lines.push({ text: b[j], kind: 'add' })
+    j += 1
+  }
+  return lines
+}
+
+function renderUnifiedDiff(before: string, after: string) {
+  const lines = buildUnifiedDiff(before, after)
+  return (
+    <div className="max-h-[600px] overflow-auto rounded border border-slate-200 bg-[#0b1020] p-4 font-mono text-sm leading-6 text-slate-100">
+      {lines.length === 0 ? <div className="text-slate-400">(无变更)</div> : null}
+      {lines.map((line, idx) => {
+        const className =
+          line.kind === 'add'
+            ? 'bg-emerald-500/20 text-emerald-100'
+            : line.kind === 'remove'
+              ? 'bg-rose-500/20 text-rose-100 line-through decoration-rose-200/70'
+              : ''
+        return (
+          <div
+            key={`diff_${idx}`}
+            className={`rounded px-2 ${className}`}
+          >
+            <span className="whitespace-pre-wrap break-all">{line.text}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
 const historyItems = [
   {
@@ -51,6 +128,8 @@ export default function Approvals() {
   const [runId, setRunID] = useState('')
   const [checkpointId, setCheckpointID] = useState('')
   const [submittingAction, setSubmittingAction] = useState<'approve' | 'reject' | null>(null)
+  const [agentRuns, setAgentRuns] = useState<AgentRun[]>([])
+  const [activeTab, setActiveTab] = useState('document')
 
   const canSubmitDecision = useMemo(() => Boolean(runId && checkpointId && !submittingAction), [runId, checkpointId, submittingAction])
 
@@ -132,8 +211,12 @@ export default function Approvals() {
         }
 
         setRunID(targetRunId)
-        const current = await fetchPipelineCurrent(targetRunId)
+        const [current, runs] = await Promise.all([
+          fetchPipelineCurrent(targetRunId),
+          fetchPipelineAgentRuns(targetRunId),
+        ])
         setCheckpointID(current.checkpoint?.id || '')
+        setAgentRuns(runs)
       } catch (err) {
         message.error(err instanceof Error ? err.message : '加载审批上下文失败')
       }
@@ -209,46 +292,88 @@ export default function Approvals() {
 
         <div className="grid grid-cols-[1fr_360px] gap-5">
           <Card className="!rounded-xl !shadow-sm">
-            <div className="flex items-center justify-between px-4 py-3 bg-surface-container-low border-b border-outline-variant">
-              <div className="flex items-center gap-3">
-                <span className="material-symbols-outlined text-on-surface-variant">menu</span>
-                <span className="text-sm font-medium text-on-surface">Feasibility_Report_v2.docx</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="material-symbols-outlined text-on-surface-variant cursor-pointer">zoom_out</span>
-                <span className="text-sm text-on-surface-variant min-w-12 text-center">100%</span>
-                <span className="material-symbols-outlined text-on-surface-variant cursor-pointer">zoom_in</span>
-              </div>
-            </div>
-            <div className="px-10 py-8">
-              <div className="flex items-center gap-4 mb-7">
-                <Avatar size={48} className="!bg-surface-container-high !text-primary" icon={<span className="material-symbols-outlined">star</span>} />
-                <div className="text-right flex-1">
-                  <div className="text-xs font-semibold text-gray-400 tracking-wide">GENERATED DOCUMENT</div>
-                  <div className="text-sm text-on-surface font-medium">ID: REQ-9042-ALPHA</div>
-                </div>
-              </div>
+            <Tabs
+              activeKey={activeTab}
+              onChange={setActiveTab}
+              items={[
+                {
+                  key: 'document',
+                  label: (
+                    <span className="flex items-center gap-2">
+                      <FileTextOutlined />
+                      文档详情
+                    </span>
+                  ),
+                  children: (
+                    <div className="px-10 py-8">
+                      <div className="flex items-center gap-4 mb-7">
+                        <Avatar size={48} className="!bg-surface-container-high !text-primary" icon={<span className="material-symbols-outlined">star</span>} />
+                        <div className="text-right flex-1">
+                          <div className="text-xs font-semibold text-gray-400 tracking-wide">GENERATED DOCUMENT</div>
+                          <div className="text-sm text-on-surface font-medium">ID: REQ-9042-ALPHA</div>
+                        </div>
+                      </div>
 
-              <h2 className="text-xl font-bold text-on-surface mt-6 mb-4">Abstract</h2>
-              <p className="text-sm text-on-surface-variant leading-relaxed mb-4">
-                This feasibility report outlines the necessary requirements for the integration of high-level LLM agents into the existing Project Alpha infrastructure.
-              </p>
+                      <h2 className="text-xl font-bold text-on-surface mt-6 mb-4">Abstract</h2>
+                      <p className="text-sm text-on-surface-variant leading-relaxed mb-4">
+                        This feasibility report outlines the necessary requirements for the integration of high-level LLM agents into the existing Project Alpha infrastructure.
+                      </p>
 
-              <h2 className="text-xl font-bold text-on-surface mt-6 mb-4">Technical Specifications</h2>
-              <ul className="list-disc pl-5 mb-5 space-y-2 text-sm text-on-surface-variant">
-                <li>Integration with existing REST APIs through a secure gateway layer.</li>
-                <li>Implementation of vector database indexing for real-time retrieval.</li>
-                <li>Estimated GPU resource allocation: 400 TFLOPS across 8 clusters.</li>
-              </ul>
+                      <h2 className="text-xl font-bold text-on-surface mt-6 mb-4">Technical Specifications</h2>
+                      <ul className="list-disc pl-5 mb-5 space-y-2 text-sm text-on-surface-variant">
+                        <li>Integration with existing REST APIs through a secure gateway layer.</li>
+                        <li>Implementation of vector database indexing for real-time retrieval.</li>
+                        <li>Estimated GPU resource allocation: 400 TFLOPS across 8 clusters.</li>
+                      </ul>
 
-              <div className="bg-surface-container-low rounded-xl p-5 my-5">
-                <div className="flex justify-between items-center mb-3">
-                  <span className="text-xs font-bold text-primary tracking-wide">AI CONFIDENCE SCORE</span>
-                  <span className="text-lg font-bold text-on-surface">92%</span>
-                </div>
-                <Progress percent={92} strokeColor="#0066ff" trailColor="#dbe8f6" showInfo={false} />
-              </div>
-            </div>
+                      <div className="bg-surface-container-low rounded-xl p-5 my-5">
+                        <div className="flex justify-between items-center mb-3">
+                          <span className="text-xs font-bold text-primary tracking-wide">AI CONFIDENCE SCORE</span>
+                          <span className="text-lg font-bold text-on-surface">92%</span>
+                        </div>
+                        <Progress percent={92} strokeColor="#0066ff" trailColor="#dbe8f6" showInfo={false} />
+                      </div>
+                    </div>
+                  ),
+                },
+                {
+                  key: 'diff',
+                  label: (
+                    <span className="flex items-center gap-2">
+                      <CodeOutlined />
+                      代码变更
+                    </span>
+                  ),
+                  children: (
+                    <div className="p-6">
+                      {agentRuns.length > 0 ? (
+                        <div className="space-y-6">
+                          {agentRuns.map((run) => (
+                            <div key={run.id} className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <div className="font-medium text-sm">
+                                  Agent: {run.agentKey} ({run.provider}/{run.model})
+                                </div>
+                                <Badge status={run.status === 'succeeded' ? 'success' : 'error'} text={run.status} />
+                              </div>
+                              {run.inputJson && run.outputJson ? (
+                                renderUnifiedDiff(run.inputJson, run.outputJson)
+                              ) : (
+                                <div className="text-sm text-gray-500">该阶段无代码变更</div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-12 text-gray-500">
+                          暂无代码变更记录
+                        </div>
+                      )}
+                    </div>
+                  ),
+                },
+              ]}
+            />
           </Card>
 
           <aside className="flex flex-col gap-4">

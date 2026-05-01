@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"feishu-pipeline/apps/api-go/internal/external/feishu"
 	"feishu-pipeline/apps/api-go/internal/model"
 	"feishu-pipeline/apps/api-go/internal/utils"
 )
@@ -28,12 +29,13 @@ type EngineRepository interface {
 }
 
 type Engine struct {
-	repository EngineRepository
-	executor   Executor
+	repository   EngineRepository
+	executor     Executor
+	feishuClient *feishu.Client
 }
 
-func NewEngine(repository EngineRepository, executor Executor) *Engine {
-	return &Engine{repository: repository, executor: executor}
+func NewEngine(repository EngineRepository, executor Executor, feishuClient *feishu.Client) *Engine {
+	return &Engine{repository: repository, executor: executor, feishuClient: feishuClient}
 }
 
 func (e *Engine) Run(ctx context.Context, runID string) error {
@@ -81,6 +83,46 @@ func (e *Engine) Run(ctx context.Context, runID string) error {
 			if err := e.repository.UpdatePipelineRunStatus(ctx, runID, model.PipelineRunWaitingApproval); err != nil {
 				return err
 			}
+
+			// Send Feishu notification when reaching checkpoint
+			if e.feishuClient != nil && e.feishuClient.Enabled() {
+				// Find the corresponding checkpoint
+				var checkpoint *model.Checkpoint
+				for _, cp := range checkpoints {
+					if cp.StageRunID == stage.ID {
+						checkpoint = &cp
+						break
+					}
+				}
+
+				if checkpoint != nil {
+					// Build notification message
+					checkpointName := "方案审批"
+					if stage.StageKey == StageCheckpointReview {
+						checkpointName = "代码评审确认"
+					}
+
+					approvalURL := fmt.Sprintf("%s/approvals/%s", e.feishuClient.BaseURL(), runID)
+
+					// Create a task to send notification
+					task := model.Task{
+						ID:            utils.NewID("task"),
+						Title:         fmt.Sprintf("流水线审批通知: %s", run.Title),
+						Description:   fmt.Sprintf("流水线已到达【%s】检查点，等待您的审批。\n\n需求描述: %s\n流水线ID: %s\n当前阶段: %s\n审批链接: %s", checkpointName, run.RequirementText, runID, stage.StageKey, approvalURL),
+						AssigneeID:    run.CreatedBy,
+						NotifyContent: fmt.Sprintf("您有一条流水线需要审批：%s", run.Title),
+						DocURL:        approvalURL,
+					}
+
+					// Send Feishu message
+					_, err := e.feishuClient.SendTaskMessage(ctx, task)
+					if err != nil {
+						// Log error but don't fail the pipeline
+						fmt.Printf("failed to send feishu notification for checkpoint: %v\n", err)
+					}
+				}
+			}
+
 			return nil
 		}
 

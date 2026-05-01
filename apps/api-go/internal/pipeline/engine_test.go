@@ -23,7 +23,7 @@ func TestEngineRunBuildsStructuredStageInput(t *testing.T) {
 		t.Fatalf("expected 1 checkpoint, got %d", len(checkpoints))
 	}
 
-	engine := pipeline.NewEngine(repository, pipeline.NewSequentialExecutor())
+	engine := pipeline.NewEngine(repository, pipeline.NewSequentialExecutor(), nil)
 	if err := engine.Run(context.Background(), run.ID); err != nil {
 		t.Fatalf("run engine: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestEngineRunBuildsStructuredStageInput(t *testing.T) {
 func TestEngineRunCompletesAfterCheckpointApprovals(t *testing.T) {
 	repository := newTestRepository(t)
 	run := seedFullPipelineRun(t, repository)
-	engine := pipeline.NewEngine(repository, pipeline.NewSequentialExecutor())
+	engine := pipeline.NewEngine(repository, pipeline.NewSequentialExecutor(), nil)
 	ctx := context.Background()
 
 	if err := engine.Run(ctx, run.ID); err != nil {
@@ -150,7 +150,7 @@ func TestEngineStopsAfterInFlightStageWhenRunIsPaused(t *testing.T) {
 			}
 			return nil
 		},
-	})
+	}, nil)
 
 	if err := engine.Run(ctx, run.ID); err != nil {
 		t.Fatalf("run engine: %v", err)
@@ -182,7 +182,7 @@ func TestEngineStopsAfterInFlightStageWhenRunIsTerminated(t *testing.T) {
 			}
 			return nil
 		},
-	})
+	}, nil)
 
 	if err := engine.Run(ctx, run.ID); err != nil {
 		t.Fatalf("run engine: %v", err)

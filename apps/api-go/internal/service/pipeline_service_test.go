@@ -14,7 +14,7 @@ import (
 
 func TestGetPipelineRunTimelineAggregatesWaitingApprovalState(t *testing.T) {
 	repository := newPipelineTestRepository(t)
-	service := NewPipelineService(repository)
+	service := NewPipelineService(repository, nil)
 	ctx := context.Background()
 	now := time.Now().UTC()
 
@@ -55,7 +55,7 @@ func TestGetPipelineRunTimelineAggregatesWaitingApprovalState(t *testing.T) {
 
 func TestGetPipelineRunTimelineAggregatesCreatedRun(t *testing.T) {
 	repository := newPipelineTestRepository(t)
-	service := NewPipelineService(repository)
+	service := NewPipelineService(repository, nil)
 	ctx := context.Background()
 	detail, err := service.CreatePipelineRun(ctx, CreatePipelineRunInput{Title: "Timeline test", RequirementText: "需要展示 pipeline 工作台聚合数据", TargetRepo: "self", TargetBranch: "main", CreatedBy: "tester"})
 	if err != nil {
@@ -91,7 +91,7 @@ func TestGetPipelineRunTimelineAggregatesCreatedRun(t *testing.T) {
 
 func TestGetPipelineRunTimelineAggregatesDeliveryAndNextAction(t *testing.T) {
 	repository := newPipelineTestRepository(t)
-	service := NewPipelineService(repository)
+	service := NewPipelineService(repository, nil)
 	ctx := context.Background()
 	now := time.Now().UTC()
 
@@ -144,7 +144,7 @@ func TestGetPipelineRunTimelineAggregatesDeliveryAndNextAction(t *testing.T) {
 
 func TestGetPipelineRunTimelineAggregatesWorkspaceData(t *testing.T) {
 	repository := newPipelineTestRepository(t)
-	service := NewPipelineService(repository)
+	service := NewPipelineService(repository, nil)
 	ctx := context.Background()
 	detail, err := service.CreatePipelineRun(ctx, CreatePipelineRunInput{Title: "Timeline test", RequirementText: "需要展示流水线工作台", TargetRepo: "self", TargetBranch: "main", CreatedBy: "tester"})
 	if err != nil {
@@ -177,7 +177,7 @@ func TestGetPipelineRunTimelineAggregatesWorkspaceData(t *testing.T) {
 
 func TestGetPipelineRunTimelineReturnsAggregatedCurrentState(t *testing.T) {
 	repository := newPipelineTestRepository(t)
-	service := NewPipelineService(repository)
+	service := NewPipelineService(repository, nil)
 	ctx := context.Background()
 	now := time.Now().UTC()
 
@@ -218,7 +218,7 @@ func TestGetPipelineRunTimelineReturnsAggregatedCurrentState(t *testing.T) {
 
 func TestPipelineRunLifecycleRejectsInvalidTransitions(t *testing.T) {
 	repository := newPipelineTestRepository(t)
-	service := NewPipelineService(repository)
+	service := NewPipelineService(repository, nil)
 	ctx := context.Background()
 	now := time.Now().UTC()
 
@@ -236,7 +236,7 @@ func TestPipelineRunLifecycleRejectsInvalidTransitions(t *testing.T) {
 
 func TestApproveCheckpointRejectsDuplicateDecision(t *testing.T) {
 	repository := newPipelineTestRepository(t)
-	service := NewPipelineService(repository)
+	service := NewPipelineService(repository, nil)
 	ctx := context.Background()
 	now := time.Now().UTC()
 
@@ -262,7 +262,7 @@ func TestApproveCheckpointRejectsDuplicateDecision(t *testing.T) {
 
 func TestRejectCheckpointResetsPreviousStage(t *testing.T) {
 	repository := newPipelineTestRepository(t)
-	service := NewPipelineService(repository)
+	service := NewPipelineService(repository, nil)
 	ctx := context.Background()
 	now := time.Now().UTC()
 

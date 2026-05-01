@@ -1171,6 +1171,11 @@ func (c *Client) BitableTemplateToken() string {
 	return c.cfg.BitableTemplateToken
 }
 
+// BaseURL returns the configured base URL of the application
+func (c *Client) BaseURL() string {
+	return c.cfg.BaseURL
+}
+
 func (c *Client) doJSON(req *http.Request, target any) error {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

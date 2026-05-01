@@ -198,6 +198,43 @@ export async function fetchGitDelivery(deliveryId: string): Promise<GitDelivery>
   return request<GitDelivery>(`/api/git-deliveries/${deliveryId}`)
 }
 
+export async function fetchPipelineAgentRuns(runId: string): Promise<AgentRun[]> {
+  const data = await request<{ agentRuns: AgentRun[] }>(`/api/pipeline-runs/${runId}/agent-runs`)
+  return data.agentRuns
+}
+
+export interface SessionMessage {
+  id: string
+  sessionId: string
+  role: string
+  content: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SessionDetail {
+  session: {
+    id: string
+    title: string
+    description: string
+    status: string
+    createdAt: string
+    updatedAt: string
+  }
+  messages: SessionMessage[]
+}
+
+export async function fetchSessionDetail(sessionId: string): Promise<SessionDetail> {
+  return request<SessionDetail>(`/api/sessions/${sessionId}`)
+}
+
+export async function sendSessionMessage(sessionId: string, content: string): Promise<SessionDetail> {
+  return request<SessionDetail>(`/api/sessions/${sessionId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  })
+}
+
 export async function startPipelineRun(runId: string): Promise<void> {
   await request(`/api/pipeline-runs/${runId}/start`, { method: 'POST' })
 }

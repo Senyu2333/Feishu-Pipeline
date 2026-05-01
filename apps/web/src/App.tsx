@@ -1,5 +1,5 @@
 import { createRouter, RouterProvider } from '@tanstack/react-router'
-import { createRoute, createRootRoute } from '@tanstack/react-router'
+import { Outlet, createRoute, createRootRoute } from '@tanstack/react-router'
 import Home from './pages/Home'
 import NewRequirement from './pages/NewRequirement'
 import Workflows from './pages/Workflows'
@@ -11,10 +11,20 @@ import Session from './pages/Session'
 import Debug from './pages/Debug'
 import { APIDocument } from './pages/Swagger'
 import Assets from './pages/Assets'
+import PipelineChatPanel from './components/PipelineChatPanel'
 
+function RootLayout() {
+  return (
+    <>
+      <Outlet />
+      <PipelineChatPanel />
+    </>
+  )
+}
 
-
-const rootRoute = createRootRoute()
+const rootRoute = createRootRoute({
+  component: RootLayout,
+})
 
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -93,7 +103,7 @@ const assetsRoute = createRoute({
   component: Assets,
 })
 
-const routeTree = rootRoute.addChildren([indexRoute, newRequirementRoute, workflowsRoute, monitoringRoute, approvalsRoute, deliveryRoute, authCallbackRoute, sessionRoute, debugRoute, swaggerRoute, assetsRoute])
+const routeTree = rootRoute.addChildren([indexRoute, newRequirementRoute, workflowsRoute, monitoringRoute, approvalsRoute, approvalsRunRoute, deliveryRoute, authCallbackRoute, sessionRoute, debugRoute, swaggerRoute, assetsRoute])
 const router = createRouter({ routeTree })
 
 declare module '@tanstack/react-router' {

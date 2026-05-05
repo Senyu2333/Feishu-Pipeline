@@ -47,9 +47,9 @@ type ChangeItemRequest struct {
 }
 
 type ExecuteChangesResponse struct {
-	AppliedFiles []string           `json:"appliedFiles"`
-	FailedFiles  []map[string]any   `json:"failedFiles"`
-	Summary      string             `json:"summary"`
+	AppliedFiles []string         `json:"appliedFiles"`
+	FailedFiles  []map[string]any `json:"failedFiles"`
+	Summary      string           `json:"summary"`
 }
 
 type ExecuteChangesEnvelope struct {
@@ -330,4 +330,105 @@ func NewAgentRunResponse(item model.AgentRun) AgentRunResponse {
 
 func NewGitDeliveryResponse(item model.GitDelivery) GitDeliveryResponse {
 	return GitDeliveryResponse{ID: item.ID, PipelineRunID: item.PipelineRunID, Provider: item.Provider, Repo: item.Repo, BaseBranch: item.BaseBranch, HeadBranch: item.HeadBranch, CommitSHA: item.CommitSHA, PRMRURL: item.PRMRURL, PRMRTitle: item.PRMRTitle, PRMRBody: item.PRMRBody, ChangedFilesJSON: item.ChangedFilesJSON, ValidationJSON: item.ValidationJSON, SummaryMarkdown: item.SummaryMarkdown, Status: item.Status, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+}
+
+// 统计相关类型定义
+type TimeRange string
+
+const (
+	TimeRangeToday  TimeRange = "today"
+	TimeRange7Days  TimeRange = "7d"
+	TimeRange30Days TimeRange = "30d"
+	TimeRangeCustom TimeRange = "custom"
+)
+
+// StatisticsOverviewResponse 全局概览统计
+type StatisticsOverviewResponse struct {
+	TotalRuns        int64   `json:"totalRuns"`        // 总流水线数
+	SuccessRate      float64 `json:"successRate"`      // 成功率（0-1）
+	AvgDurationMS    int64   `json:"avgDurationMs"`    // 平均运行时长（毫秒）
+	TotalDurationMS  int64   `json:"totalDurationMs"`  // 总运行时长（毫秒）
+	TotalTokenUsage  int64   `json:"totalTokenUsage"`  // 总Token消耗
+	TodayTokenUsage  int64   `json:"todayTokenUsage"`  // 今日Token消耗
+	AvgTokenPerRun   int64   `json:"avgTokenPerRun"`   // 平均每次运行Token消耗
+	FailedRuns       int64   `json:"failedRuns"`       // 失败流水线数
+	RunningRuns      int64   `json:"runningRuns"`      // 运行中流水线数
+	TotalAgentsCalls int64   `json:"totalAgentsCalls"` // 总Agent调用次数
+}
+
+// TrendItem 趋势统计项
+type TrendItem struct {
+	Date          string `json:"date"`          // 日期（YYYY-MM-DD）
+	TotalRuns     int64  `json:"totalRuns"`     // 运行数
+	SuccessRuns   int64  `json:"successRuns"`   // 成功数
+	FailedRuns    int64  `json:"failedRuns"`    // 失败数
+	TokenUsage    int64  `json:"tokenUsage"`    // Token消耗
+	AvgDurationMS int64  `json:"avgDurationMs"` // 平均时长
+}
+
+// StatisticsTrendsResponse 趋势统计响应
+type StatisticsTrendsResponse struct {
+	TimeRange TimeRange   `json:"timeRange"` // 时间范围
+	Items     []TrendItem `json:"items"`     // 趋势数据
+}
+
+// StageStatisticsItem 阶段统计项
+type StageStatisticsItem struct {
+	StageKey        string  `json:"stageKey"`        // 阶段Key
+	StageName       string  `json:"stageName"`       // 阶段名称
+	TotalRuns       int64   `json:"totalRuns"`       // 总执行次数
+	SuccessRate     float64 `json:"successRate"`     // 成功率
+	AvgDurationMS   int64   `json:"avgDurationMs"`   // 平均耗时
+	TotalDurationMS int64   `json:"totalDurationMs"` // 总耗时
+	FailedRuns      int64   `json:"failedRuns"`      // 失败次数
+}
+
+// StatisticsStagesResponse 阶段统计响应
+type StatisticsStagesResponse struct {
+	Items []StageStatisticsItem `json:"items"` // 各阶段统计数据
+}
+
+// AgentStatisticsItem Agent统计项
+type AgentStatisticsItem struct {
+	AgentKey        string  `json:"agentKey"`        // Agent类型
+	TotalCalls      int64   `json:"totalCalls"`      // 总调用次数
+	SuccessRate     float64 `json:"successRate"`     // 成功率
+	AvgLatencyMS    int64   `json:"avgLatencyMs"`    // 平均延迟
+	TotalTokenUsage int64   `json:"totalTokenUsage"` // 总Token消耗
+	AvgTokenPerCall int64   `json:"avgTokenPerCall"` // 平均每次Token消耗
+	FailedCalls     int64   `json:"failedCalls"`     // 失败次数
+}
+
+// ModelStatisticsItem 模型统计项
+type ModelStatisticsItem struct {
+	Model           string `json:"model"`           // 模型名称
+	TotalCalls      int64  `json:"totalCalls"`      // 总调用次数
+	TotalTokenUsage int64  `json:"totalTokenUsage"` // 总Token消耗
+}
+
+// StatisticsAgentsResponse Agent统计响应
+type StatisticsAgentsResponse struct {
+	AgentItems []AgentStatisticsItem `json:"agentItems"` // Agent维度统计
+	ModelItems []ModelStatisticsItem `json:"modelItems"` // 模型维度统计
+}
+
+// 统计相关Envelope
+type StatisticsOverviewEnvelope struct {
+	Data  StatisticsOverviewResponse `json:"data,omitempty"`
+	Error string                     `json:"error,omitempty"`
+}
+
+type StatisticsTrendsEnvelope struct {
+	Data  StatisticsTrendsResponse `json:"data,omitempty"`
+	Error string                   `json:"error,omitempty"`
+}
+
+type StatisticsStagesEnvelope struct {
+	Data  StatisticsStagesResponse `json:"data,omitempty"`
+	Error string                   `json:"error,omitempty"`
+}
+
+type StatisticsAgentsEnvelope struct {
+	Data  StatisticsAgentsResponse `json:"data,omitempty"`
+	Error string                   `json:"error,omitempty"`
 }

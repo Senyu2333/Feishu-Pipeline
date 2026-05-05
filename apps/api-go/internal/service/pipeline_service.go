@@ -13,6 +13,7 @@ import (
 	"feishu-pipeline/apps/api-go/internal/model"
 	"feishu-pipeline/apps/api-go/internal/pipeline"
 	"feishu-pipeline/apps/api-go/internal/repo"
+	pipelinetype "feishu-pipeline/apps/api-go/internal/type/pipeline"
 	"feishu-pipeline/apps/api-go/internal/utils"
 )
 
@@ -437,6 +438,230 @@ func (s *PipelineService) ListGitDeliveries(ctx context.Context, runID string) (
 
 func (s *PipelineService) GetGitDelivery(ctx context.Context, deliveryID string) (model.GitDelivery, error) {
 	return s.repository.GetGitDeliveryByID(ctx, deliveryID)
+}
+
+// ==================== 统计相关方法 ====================
+
+// GetStatisticsOverview 获取全局统计概览
+func (s *PipelineService) GetStatisticsOverview(ctx context.Context) (pipelinetype.StatisticsOverviewResponse, error) {
+	var result pipelinetype.StatisticsOverviewResponse
+
+	// 获取全量统计
+	allStats, err := s.repository.GetPipelineStatistics(ctx, nil, nil)
+	if err != nil {
+		return result, err
+	}
+
+	// 获取今日统计
+	todayStart := time.Now().UTC().Truncate(24 * time.Hour)
+	todayEnd := todayStart.Add(24 * time.Hour)
+
+	// 计算成功率
+	if allStats.TotalRuns > 0 {
+		result.SuccessRate = float64(allStats.SuccessRuns) / float64(allStats.TotalRuns)
+	}
+
+	// 计算平均时长
+	if allStats.SuccessRuns > 0 {
+		result.AvgDurationMS = allStats.TotalDurationMS / allStats.SuccessRuns
+	}
+
+	// 获取总Token消耗
+	totalToken, err := s.repository.GetTotalTokenUsage(ctx, nil, nil)
+	if err != nil {
+		return result, err
+	}
+
+	// 获取今日Token消耗
+	todayToken, err := s.repository.GetTotalTokenUsage(ctx, &todayStart, &todayEnd)
+	if err != nil {
+		return result, err
+	}
+
+	// 计算平均每次运行Token消耗
+	if allStats.TotalRuns > 0 {
+		result.AvgTokenPerRun = totalToken / allStats.TotalRuns
+	}
+
+	// 获取总Agent调用次数
+	var totalAgentCalls int64
+	err = s.repository.DB().WithContext(ctx).Model(&model.AgentRun{}).Where("parent_agent_run_id = ''").Count(&totalAgentCalls).Error
+	if err != nil {
+		return result, err
+	}
+
+	result.TotalRuns = allStats.TotalRuns
+	result.TotalDurationMS = allStats.TotalDurationMS
+	result.FailedRuns = allStats.FailedRuns
+	result.RunningRuns = allStats.RunningRuns
+	result.TotalTokenUsage = totalToken
+	result.TodayTokenUsage = todayToken
+	result.TotalAgentsCalls = totalAgentCalls
+
+	return result, nil
+}
+
+// GetStatisticsTrends 获取趋势统计
+func (s *PipelineService) GetStatisticsTrends(ctx context.Context, timeRange pipelinetype.TimeRange, startTime *time.Time, endTime *time.Time) (pipelinetype.StatisticsTrendsResponse, error) {
+	var result pipelinetype.StatisticsTrendsResponse
+	result.TimeRange = timeRange
+
+	// 计算时间范围
+	var start, end time.Time
+	now := time.Now().UTC()
+
+	switch timeRange {
+	case pipelinetype.TimeRangeToday:
+		start = now.Truncate(24 * time.Hour)
+		end = start.Add(24 * time.Hour)
+	case pipelinetype.TimeRange7Days:
+		start = now.AddDate(0, 0, -7).Truncate(24 * time.Hour)
+		end = now
+	case pipelinetype.TimeRange30Days:
+		start = now.AddDate(0, 0, -30).Truncate(24 * time.Hour)
+		end = now
+	case pipelinetype.TimeRangeCustom:
+		if startTime == nil || endTime == nil {
+			return result, fmt.Errorf("custom time range requires start and end time")
+		}
+		start = *startTime
+		end = *endTime
+	default:
+		return result, fmt.Errorf("invalid time range")
+	}
+
+	// 查询趋势数据
+	trendItems, err := s.repository.GetPipelineTrends(ctx, start, end)
+	if err != nil {
+		return result, err
+	}
+
+	// 转换为响应类型
+	result.Items = make([]pipelinetype.TrendItem, len(trendItems))
+	for i, item := range trendItems {
+		result.Items[i] = pipelinetype.TrendItem{
+			Date:          item.Date,
+			TotalRuns:     item.TotalRuns,
+			SuccessRuns:   item.SuccessRuns,
+			FailedRuns:    item.FailedRuns,
+			TokenUsage:    item.TokenUsage,
+			AvgDurationMS: item.AvgDurationMS,
+		}
+	}
+
+	return result, nil
+}
+
+// GetStatisticsStages 获取阶段统计
+func (s *PipelineService) GetStatisticsStages(ctx context.Context) (pipelinetype.StatisticsStagesResponse, error) {
+	var result pipelinetype.StatisticsStagesResponse
+
+	// 查询阶段统计
+	stageStats, err := s.repository.GetStageStatistics(ctx)
+	if err != nil {
+		return result, err
+	}
+
+	// 阶段名称映射
+	stageNameMap := map[string]string{
+		pipeline.StageRequirementAnalysis: "需求分析",
+		pipeline.StageSolutionDesign:      "方案设计",
+		pipeline.StageCheckpointDesign:    "方案审批",
+		pipeline.StageCodeGeneration:      "代码生成",
+		pipeline.StageTestGeneration:      "测试生成",
+		pipeline.StageCodeReview:          "代码评审",
+		pipeline.StageCheckpointReview:    "评审确认",
+		pipeline.StageDelivery:            "交付集成",
+	}
+
+	// 转换为响应类型
+	result.Items = make([]pipelinetype.StageStatisticsItem, len(stageStats))
+	for i, item := range stageStats {
+		stageName := stageNameMap[item.StageKey]
+		if stageName == "" {
+			stageName = item.StageKey
+		}
+
+		successRate := 0.0
+		if item.TotalRuns > 0 {
+			successRate = float64(item.SuccessRuns) / float64(item.TotalRuns)
+		}
+
+		avgDuration := int64(0)
+		if item.SuccessRuns > 0 {
+			avgDuration = item.TotalDurationMS / item.SuccessRuns
+		}
+
+		result.Items[i] = pipelinetype.StageStatisticsItem{
+			StageKey:        item.StageKey,
+			StageName:       stageName,
+			TotalRuns:       item.TotalRuns,
+			SuccessRate:     successRate,
+			AvgDurationMS:   avgDuration,
+			TotalDurationMS: item.TotalDurationMS,
+			FailedRuns:      item.FailedRuns,
+		}
+	}
+
+	return result, nil
+}
+
+// GetStatisticsAgents 获取Agent统计
+func (s *PipelineService) GetStatisticsAgents(ctx context.Context) (pipelinetype.StatisticsAgentsResponse, error) {
+	var result pipelinetype.StatisticsAgentsResponse
+
+	// 查询Agent统计
+	agentStats, err := s.repository.GetAgentStatistics(ctx)
+	if err != nil {
+		return result, err
+	}
+
+	// 转换Agent统计
+	result.AgentItems = make([]pipelinetype.AgentStatisticsItem, len(agentStats))
+	for i, item := range agentStats {
+		successRate := 0.0
+		if item.TotalCalls > 0 {
+			successRate = float64(item.SuccessCalls) / float64(item.TotalCalls)
+		}
+
+		avgLatency := int64(0)
+		if item.SuccessCalls > 0 {
+			avgLatency = item.TotalLatencyMS / item.SuccessCalls
+		}
+
+		avgToken := int64(0)
+		if item.TotalCalls > 0 {
+			avgToken = item.TotalTokenUsage / item.TotalCalls
+		}
+
+		result.AgentItems[i] = pipelinetype.AgentStatisticsItem{
+			AgentKey:        item.AgentKey,
+			TotalCalls:      item.TotalCalls,
+			SuccessRate:     successRate,
+			AvgLatencyMS:    avgLatency,
+			TotalTokenUsage: item.TotalTokenUsage,
+			AvgTokenPerCall: avgToken,
+			FailedCalls:     item.FailedCalls,
+		}
+	}
+
+	// 查询模型统计
+	modelStats, err := s.repository.GetModelStatistics(ctx)
+	if err != nil {
+		return result, err
+	}
+
+	// 转换模型统计
+	result.ModelItems = make([]pipelinetype.ModelStatisticsItem, len(modelStats))
+	for i, item := range modelStats {
+		result.ModelItems[i] = pipelinetype.ModelStatisticsItem{
+			Model:           item.Model,
+			TotalCalls:      item.TotalCalls,
+			TotalTokenUsage: item.TotalTokenUsage,
+		}
+	}
+
+	return result, nil
 }
 
 func (s *PipelineService) StartPipelineRun(ctx context.Context, runID string) (model.PipelineRun, error) {

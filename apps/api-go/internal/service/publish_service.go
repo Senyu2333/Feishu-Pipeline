@@ -53,13 +53,13 @@ func (s *PublishService) PublishSession(ctx context.Context, userID string, sess
 	if err != nil {
 		return err
 	}
-	if user.Role != model.RoleProduct && user.Role != model.RoleAdmin {
-		return errors.New("only product or admin can publish requirement")
-	}
 
 	aggregate, err := s.repository.GetSessionAggregate(ctx, sessionID)
 	if err != nil {
 		return err
+	}
+	if aggregate.Session.OwnerID != user.ID && user.Role != model.RoleProduct && user.Role != model.RoleAdmin {
+		return errors.New("only session owner, product or admin can publish requirement")
 	}
 	if aggregate.Session.Status != model.SessionDraft {
 		return errors.New("session is not in draft status")
@@ -81,16 +81,16 @@ func (s *PublishService) TryAutoPublishByMessage(ctx context.Context, userID str
 	if err != nil {
 		return false, "authentication required", err
 	}
-	if user.Role != model.RoleProduct && user.Role != model.RoleAdmin {
-		return false, "user role is not product/admin", nil
-	}
-	if !containsScheduleSignal(content) {
-		return false, "message does not include schedule signal", nil
+	if !isPublishIntent(content) {
+		return false, "message does not include publish confirmation signal", nil
 	}
 
 	aggregate, err := s.repository.GetSessionAggregate(ctx, sessionID)
 	if err != nil {
 		return false, "session not found", err
+	}
+	if aggregate.Session.OwnerID != user.ID && user.Role != model.RoleProduct && user.Role != model.RoleAdmin {
+		return false, "user is not session owner/product/admin", nil
 	}
 	if aggregate.Session.Status != model.SessionDraft {
 		return false, "session is not in draft status", nil

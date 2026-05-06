@@ -52,6 +52,7 @@ export default function Session() {
   const sidebarWidth = convCollapsed ? 80 : 336 // 折叠 80，展开 80+256=336
   // 防止首条消息重复发送
   const pendingSentRef = useRef(false)
+  const publishPollTimerRef = useRef<number | null>(null)
 
   // 获取当前登录用户（用于头像）
   useEffect(() => {
@@ -80,28 +81,30 @@ export default function Session() {
     }
   }, [sessionId])
 
+  const startPublishPoll = useCallback(() => {
+    if (publishPollTimerRef.current) {
+      window.clearInterval(publishPollTimerRef.current)
+    }
+    let attempts = 0
+    publishPollTimerRef.current = window.setInterval(() => {
+      attempts += 1
+      void refreshSessionRuns()
+      if (attempts >= 15) {
+        if (publishPollTimerRef.current) {
+          window.clearInterval(publishPollTimerRef.current)
+          publishPollTimerRef.current = null
+        }
+      }
+    }, 2000)
+  }, [refreshSessionRuns])
+
   // 发送消息（抽出独立函数，供手动发送和自动发送复用）
   const sendMessage = useCallback(async (content: string) => {
     if (!content.trim() || sendingRef.current) return
 
-    const triggerAutoPublishCheck = async (assistantContent: string) => {
-      if (!sessionId || !assistantContent.trim()) return
-      try {
-        await fetch(`/api/sessions/${sessionId}/auto-publish-check`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ content: assistantContent }),
-        })
-      } catch (err) {
-        console.error('Failed to run auto publish check:', err)
-      }
-    }
-
     // 立即更新 ref，避免并发问题
     sendingRef.current = true
     setSending(true)
-    void triggerAutoPublishCheck(content)
 
     try {
       // 乐观渲染：立即把用户消息 + loading 气泡追加到本地
@@ -191,6 +194,7 @@ export default function Session() {
         }
       })
       window.setTimeout(() => void refreshSessionRuns(), 1200)
+      startPublishPoll()
 
     } catch (err) {
       console.error('Failed to send message:', err)
@@ -202,7 +206,15 @@ export default function Session() {
       sendingRef.current = false
       setSending(false)
     }
-  }, [refreshSessionRuns, sessionId])
+  }, [refreshSessionRuns, sessionId, startPublishPoll])
+
+  useEffect(() => {
+    return () => {
+      if (publishPollTimerRef.current) {
+        window.clearInterval(publishPollTimerRef.current)
+      }
+    }
+  }, [])
 
   // 获取会话详情，加载完毕后检查是否有待发消息（从 Home 跳转过来的首条消息）
   useEffect(() => {

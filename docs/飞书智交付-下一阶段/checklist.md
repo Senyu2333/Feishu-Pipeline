@@ -31,6 +31,10 @@
 - [x] PipelineRun 的 requirementText 包含需求摘要、交付目标、文档链接和初始任务拆解
 - [x] 会话页可展示绑定 PipelineRun 的状态和当前阶段
 - [x] 会话页可跳转到对应 Pipeline 工作台
+- [x] assistant 回复“自动触发需求交付工作流”时可被后端识别为确认发布意图
+- [x] 前端不再在发送消息前仅凭排期词调用预发布接口
+- [x] 会话所有者本人可确认发布需求，不再被飞书 SSO 默认 `other` 角色阻断
+- [x] 会话页会在消息发送后短轮询 PipelineRun，覆盖异步发布队列延迟
 - [ ] 使用真实飞书配置 smoke：确认 docx 创建成功
 - [ ] 使用真实飞书配置 smoke：确认用户收到需求文档消息
 - [ ] 使用真实 AI/或 fallback smoke：确认 Pipeline 自动跑到首个 checkpoint

@@ -7,6 +7,9 @@
 - [x] 对话确认需求后自动进入 Pipeline
 - [x] 结构化需求文档通过飞书发送给会话归属用户
 - [x] 会话页展示绑定 Pipeline 的状态与入口
+- [x] 修复 assistant 确认回复未触发发布的问题
+- [x] 会话所有者本人可发布自己的需求
+- [x] 会话页短轮询展示异步创建的 Pipeline
 - [ ] 真实飞书租户 smoke：docx 创建与消息送达
 - [ ] 真实演示 smoke：Pipeline 自动流转到首个 checkpoint
 

@@ -93,20 +93,13 @@ func (s *SessionService) AddMessage(ctx context.Context, userID string, sessionI
 
 	// 发布意图处理
 	if isPublishIntent(content) {
-		if aggregate.Session.Status == model.SessionDraft {
-			if user.Role == model.RoleProduct || user.Role == model.RoleAdmin {
-				if s.publisher != nil {
-					if err := s.publisher.PublishSession(ctx, userID, sessionID); err != nil {
-						return err
-					} else {
-						_, err = s.repository.AddMessage(ctx, sessionID, model.MessageAssistant, autoPublishAcceptedReply(content))
-						return err
-					}
-				}
-			} else {
-				_, err = s.repository.AddMessage(ctx, sessionID, model.MessageAssistant, publishPermissionDeniedReply(content))
-				return err
-			}
+		triggered, reply, err := s.tryTriggerPublish(ctx, user, sessionID, aggregate.Session.Status, content)
+		if err != nil {
+			return err
+		}
+		if triggered {
+			_, err = s.repository.AddMessage(ctx, sessionID, model.MessageAssistant, reply)
+			return err
 		}
 	}
 
@@ -124,6 +117,15 @@ func (s *SessionService) AddMessage(ctx context.Context, userID string, sessionI
 
 	// 草稿阶段：调用 AI 正常对话
 	reply := s.generateChatReply(ctx, sessionID, aggregate.Messages, content)
+	if isPublishIntent(reply) {
+		triggered, publishReply, err := s.tryTriggerPublish(ctx, user, sessionID, aggregate.Session.Status, reply)
+		if err != nil {
+			return err
+		}
+		if triggered {
+			reply = strings.TrimSpace(reply + "\n\n" + publishReply)
+		}
+	}
 	_, err = s.repository.AddMessage(ctx, sessionID, model.MessageAssistant, reply)
 
 	return err
@@ -171,22 +173,15 @@ func (s *SessionService) StreamMessage(ctx context.Context, userID string, sessi
 
 	// 发布意图 / 已发布状态：使用固定回复（非流式，包装成单条 token）
 	if isPublishIntent(content) {
-		if aggregate.Session.Status == model.SessionDraft {
-			if user.Role == model.RoleProduct || user.Role == model.RoleAdmin {
-				if s.publisher != nil {
-					if err := s.publisher.PublishSession(ctx, userID, sessionID); err == nil {
-						reply := autoPublishAcceptedReply(content)
-						_, _ = s.repository.AddMessage(ctx, sessionID, model.MessageAssistant, reply)
-						ch <- reply
-						return
-					}
-				}
-			} else {
-				reply := publishPermissionDeniedReply(content)
-				_, _ = s.repository.AddMessage(ctx, sessionID, model.MessageAssistant, reply)
-				ch <- reply
-				return
-			}
+		triggered, reply, err := s.tryTriggerPublish(ctx, user, sessionID, aggregate.Session.Status, content)
+		if err != nil {
+			ch <- "[ERROR] " + err.Error()
+			return
+		}
+		if triggered {
+			_, _ = s.repository.AddMessage(ctx, sessionID, model.MessageAssistant, reply)
+			ch <- reply
+			return
 		}
 	}
 
@@ -232,12 +227,46 @@ func (s *SessionService) StreamMessage(ctx context.Context, userID string, sessi
 
 	// 把完整回复存库
 	if fullReply.Len() > 0 {
-		_, _ = s.repository.AddMessage(ctx, sessionID, model.MessageAssistant, fullReply.String())
+		reply := fullReply.String()
+		if isPublishIntent(reply) {
+			triggered, publishReply, err := s.tryTriggerPublish(ctx, user, sessionID, aggregate.Session.Status, reply)
+			if err != nil {
+				ch <- "[ERROR] " + err.Error()
+				return
+			}
+			if triggered {
+				reply = strings.TrimSpace(reply + "\n\n" + publishReply)
+				ch <- "\n\n" + publishReply
+			}
+		}
+		_, _ = s.repository.AddMessage(ctx, sessionID, model.MessageAssistant, reply)
 	} else {
 		fallback := draftAssistantReply(content)
 		_, _ = s.repository.AddMessage(ctx, sessionID, model.MessageAssistant, fallback)
 		ch <- fallback
 	}
+}
+
+func (s *SessionService) tryTriggerPublish(ctx context.Context, user model.User, sessionID string, status model.SessionStatus, source string) (bool, string, error) {
+	if status != model.SessionDraft {
+		return false, "", nil
+	}
+	if user.Role != model.RoleProduct && user.Role != model.RoleAdmin {
+		aggregate, err := s.repository.GetSessionAggregate(ctx, sessionID)
+		if err != nil {
+			return false, "", err
+		}
+		if aggregate.Session.OwnerID != user.ID {
+			return true, publishPermissionDeniedReply(source), nil
+		}
+	}
+	if s.publisher == nil {
+		return false, "", nil
+	}
+	if err := s.publisher.PublishSession(ctx, user.ID, sessionID); err != nil {
+		return false, "", err
+	}
+	return true, autoPublishAcceptedReply(source), nil
 }
 
 func draftAssistantReply(prompt string) string {
@@ -268,7 +297,9 @@ func isPublishIntent(content string) bool {
 		"需求已梳理完成",
 		"可以开始交付",
 		"触发交付工作流",
+		"触发需求交付工作流",
 		"启动交付流程",
+		"自动触发需求交付工作流",
 		"开始执行需求",
 		"需求确认完成",
 		"梳理完成开始交付",
@@ -288,7 +319,7 @@ func autoPublishAcceptedReply(question string) string {
 }
 
 func publishPermissionDeniedReply(question string) string {
-	return "已识别到发布意图，但当前账号不是产品角色，不能发布需求。你可以继续咨询项目信息或让产品同学执行发布。当前消息：" + utils.Summarize(question, 120)
+	return "已识别到发布意图，但当前账号不是该会话所有者、产品或管理员，不能发布需求。你可以继续咨询项目信息或让会话所有者执行发布。当前消息：" + utils.Summarize(question, 120)
 }
 
 func publishInProgressReply(question string) string {

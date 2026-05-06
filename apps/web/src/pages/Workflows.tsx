@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useRouterState } from '@tanstack/react-router'
 import { Alert, Button, Card, Checkbox, Empty, Form, Input, Modal, Progress, Select, Skeleton, Space, Tag, Tooltip, message, Drawer, Spin } from 'antd'
-import { PlusOutlined, PauseCircleOutlined, PlayCircleOutlined, ReloadOutlined, StopOutlined, SyncOutlined, FileTextOutlined } from '@ant-design/icons'
+import { PlusOutlined, PauseCircleOutlined, PlayCircleOutlined, ReloadOutlined, StopOutlined, SyncOutlined, FileTextOutlined, CodeOutlined } from '@ant-design/icons'
 import Sidebar from '../components/Sidebar'
+import PipelineChatPanel from '../components/PipelineChatPanel'
 import {
   type AgentRun,
   type Artifact,
@@ -11,6 +13,7 @@ import {
   fetchPipelineTimeline,
   formatDateTime,
   formatDuration,
+  isCodeApprovalStage,
   isLiveRun,
   latestArtifact,
   nextActionLabel,
@@ -25,7 +28,24 @@ import {
 
 const sidebarWidth = 80
 
+/** 地址栏与 Router 解析有时不同步，两处任一命中 ?chatDemo=1 即视为 Mock */
+function useWorkflowChatDemoFlag(): boolean {
+  return useRouterState({
+    select: state => {
+      if (typeof window !== 'undefined') {
+        if (new URLSearchParams(window.location.search).get('chatDemo') === '1') return true
+      }
+      const s = state.location.search as Record<string, unknown> | undefined
+      const v = s?.chatDemo
+      return v === '1' || v === 1 || String(v ?? '') === '1'
+    },
+  })
+}
+
 export default function Workflows() {
+  const navigate = useNavigate()
+  const workflowChatDemo = useWorkflowChatDemoFlag()
+
   const [runs, setRuns] = useState<PipelineRun[]>([])
   const [selectedRunId, setSelectedRunId] = useState('')
   const [timeline, setTimeline] = useState<PipelineRunTimeline | null>(null)
@@ -54,7 +74,7 @@ export default function Workflows() {
     targetRepo: string
     targetBranch: string
   }>()
-  const redirectedRunIdRef = useRef('')
+  const [approvalChatOpen, setApprovalChatOpen] = useState(false)
 
   const selectedRun = useMemo(
     () => runs.find(run => run.id === selectedRunId) ?? timeline?.run,
@@ -131,22 +151,23 @@ export default function Workflows() {
     return () => window.clearInterval(timer)
   }, [timeline?.run.id, timeline?.run.status])
 
+  const showCodeApprovalFab = isCodeApprovalStage(timeline) || workflowChatDemo
+
   useEffect(() => {
-    if (!timeline?.run?.id) return
-    if (timeline.run.status !== 'waiting_approval') {
-      if (redirectedRunIdRef.current === timeline.run.id) {
-        redirectedRunIdRef.current = ''
-      }
-      return
-    }
-    if (redirectedRunIdRef.current === timeline.run.id) return
-    redirectedRunIdRef.current = timeline.run.id
-    window.location.assign(`/monitoring?runId=${encodeURIComponent(timeline.run.id)}&action=approve`)
-  }, [timeline?.run.id, timeline?.run.status])
+    if (!showCodeApprovalFab) setApprovalChatOpen(false)
+  }, [showCodeApprovalFab])
 
   const refreshAll = async () => {
     await loadRuns()
     if (selectedRunId) await loadTimeline(selectedRunId)
+  }
+
+  const openMockApprovalPreview = () => {
+    navigate({ to: '/workflows', search: { chatDemo: '1' } })
+  }
+
+  const exitMockApprovalPreview = () => {
+    navigate({ to: '/workflows', search: {} })
   }
 
   const handleCreate = async (values: CreateFormValues) => {
@@ -398,14 +419,32 @@ export default function Workflows() {
                 <h1 className="m-0 text-lg font-bold text-on-surface">Pipeline 工作台</h1>
                 <div className="text-xs text-on-surface-variant">{runs.length} 个运行记录</div>
               </div>
-              <Space>
+              <Space wrap size="small">
+                <Tooltip title="无需后端流水线：展示右侧圆形代码按钮与审批面板演示数据">
+                  <Button
+                    type={workflowChatDemo ? 'default' : 'dashed'}
+                    icon={<CodeOutlined />}
+                    onClick={() => (workflowChatDemo ? exitMockApprovalPreview() : openMockApprovalPreview())}
+                  >
+                    {workflowChatDemo ? '退出预览' : '审批预览'}
+                  </Button>
+                </Tooltip>
                 <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreateModal}>新建</Button>
                 <Button type="text" icon={<ReloadOutlined />} onClick={refreshAll} loading={loadingRuns} />
               </Space>
             </div>
             <div className="p-3">
               {loadingRuns ? <Skeleton active paragraph={{ rows: 8 }} /> : null}
-              {!loadingRuns && runs.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} /> : null}
+              {!loadingRuns && runs.length === 0 ? (
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description={
+                    <span className="text-on-surface-variant">
+                      暂无运行记录。可点上方「审批预览」加载 Mock，或新建 Pipeline；真实环境下仅在流水线进入「评审确认」待审批时会出现右侧图标。
+                    </span>
+                  }
+                />
+              ) : null}
               <div className="space-y-2">
                 {runs.map(run => {
                   const meta = runStatusMeta(run.status)
@@ -451,6 +490,16 @@ export default function Workflows() {
             </div>
 
             {error ? <Alert className="mb-4" type="error" showIcon message={error} /> : null}
+
+            {workflowChatDemo ? (
+              <Alert
+                className="mb-4"
+                type="info"
+                showIcon
+                message="Mock 预览模式（chatDemo=1）"
+                description="左侧为真实工作台布局；右侧圆形按钮打开的面板为演示数据，便于联调 UI。"
+              />
+            ) : null}
 
             <div className="grid grid-cols-4 gap-3">
               <Metric title="完成阶段" value={`${timeline?.summary.completedStages ?? 0}/${timeline?.summary.totalStages ?? 0}`} />
@@ -507,6 +556,29 @@ export default function Workflows() {
           </section>
         </div>
       </main>
+
+      {showCodeApprovalFab && !approvalChatOpen ? (
+        <Tooltip title="代码审批：查看 Diff 与对话" placement="left">
+          <Button
+            type="primary"
+            shape="circle"
+            size="large"
+            icon={<CodeOutlined />}
+            className="fixed right-5 top-1/2 z-[100] !flex h-12 w-12 !items-center !justify-center -translate-y-1/2 shadow-lg"
+            onClick={() => setApprovalChatOpen(true)}
+            aria-label="打开代码审批面板"
+          />
+        </Tooltip>
+      ) : null}
+      {showCodeApprovalFab && approvalChatOpen ? (
+        <PipelineChatPanel
+          runId={timeline?.run?.id ?? selectedRunId}
+          embedded
+          onRequestClose={() => setApprovalChatOpen(false)}
+          onTimelineDirty={() => void refreshAll()}
+        />
+      ) : null}
+
       <CreatePipelineModal
         open={createModalVisible}
         onClose={() => setCreateModalVisible(false)}

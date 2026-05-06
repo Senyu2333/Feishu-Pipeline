@@ -210,10 +210,6 @@ export async function fetchPipelineDeliveries(runId: string): Promise<GitDeliver
   return data.deliveries
 }
 
-export async function fetchPipelineAgentRuns(runId: string): Promise<AgentRun[]> {
-  const data = await request<{ agentRuns: AgentRun[] }>(`/api/pipeline-runs/${runId}/agent-runs`)
-  return data.agentRuns
-}
 
 export async function fetchGitDelivery(deliveryId: string): Promise<GitDelivery> {
   return request<GitDelivery>(`/api/git-deliveries/${deliveryId}`)
@@ -390,6 +386,14 @@ export function nextActionLabel(action?: string): string {
     terminated: '已终止',
   }
   return action ? labels[action] || action : '等待数据'
+}
+
+/** 待审批且为「评审确认」代码检查点（含代码 Diff），用于工作台右侧审批面板入口 */
+export function isCodeApprovalStage(timeline: PipelineRunTimeline | null): boolean {
+  if (!timeline || timeline.run.status !== 'waiting_approval') return false
+  if (timeline.run.currentStageKey === 'checkpoint_review') return true
+  const pending = timeline.checkpoints?.find(c => c.status === 'pending')
+  return pending?.checkpointType === 'code_review'
 }
 
 export function formatDateTime(value?: string): string {

@@ -1,9 +1,12 @@
 package controller
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"feishu-pipeline/apps/api-go/internal/model"
 	"feishu-pipeline/apps/api-go/internal/service"
@@ -211,6 +214,54 @@ func (c *PipelineController) ListArtifacts(ctx *gin.Context) {
 		response = append(response, pipelinetype.NewArtifactResponse(item))
 	}
 	writeSuccess(ctx, http.StatusOK, pipelinetype.RunArtifactListResponse{Artifacts: response})
+}
+
+// GetCodeDiff
+// @tags Pipeline
+// @summary 获取流水线的代码变更集
+// @description 返回指定 PipelineRun 最新的代码变更计划，包含结构化的changeSet、标准git格式diff和变更摘要。
+// @router /api/pipeline-runs/{id}/code-diff [GET]
+// @produce application/json
+// @param id path string true "流水线运行ID"
+// @success 200 {object} object{changeSet=[]map[string]any, summary=string, updatedAt=time.Time}
+// @failure 404 {object} pipelinetype.ErrorEnvelope
+// @failure 500 {object} pipelinetype.ErrorEnvelope
+func (c *PipelineController) GetCodeDiff(ctx *gin.Context) {
+	runID := ctx.Param("id")
+
+	// 获取该流水线的所有产物
+	artifacts, err := c.pipelineService.ListArtifacts(ctx.Request.Context(), runID)
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, err)
+		return
+	}
+
+	// 找到最新的code_diff类型产物
+	var codeDiffArtifact *model.Artifact
+	for i := len(artifacts) - 1; i >= 0; i-- {
+		if artifacts[i].ArtifactType == model.ArtifactCodeDiff {
+			codeDiffArtifact = &artifacts[i]
+			break
+		}
+	}
+
+	if codeDiffArtifact == nil {
+		writeError(ctx, http.StatusNotFound, errors.New("未找到代码变更记录"))
+		return
+	}
+
+	// 解析结构化内容
+	var content map[string]any
+	if err := json.Unmarshal([]byte(codeDiffArtifact.ContentJSON), &content); err != nil {
+		writeError(ctx, http.StatusInternalServerError, errors.New("解析变更内容失败"))
+		return
+	}
+
+	writeSuccess(ctx, http.StatusOK, gin.H{
+		"changeSet": content["changeSet"],
+		"summary":   codeDiffArtifact.ContentText,
+		"updatedAt": codeDiffArtifact.UpdatedAt,
+	})
 }
 
 // ListCheckpoints
@@ -435,13 +486,13 @@ func (c *PipelineController) ExecuteChanges(ctx *gin.Context) {
 	changeSet := make([]map[string]any, 0, len(req.ChangeSet))
 	for _, item := range req.ChangeSet {
 		changeSet = append(changeSet, map[string]any{
-			"filePath":         item.FilePath,
-			"changeType":       item.ChangeType,
-			"reason":           item.Reason,
-			"proposedPatch":    item.ProposedPatch,
-			"contextIncluded":  item.ContextIncluded,
-			"originalContent":  item.OriginalContent,
-			"proposedDiff":     item.ProposedDiff,
+			"filePath":        item.FilePath,
+			"changeType":      item.ChangeType,
+			"reason":          item.Reason,
+			"proposedPatch":   item.ProposedPatch,
+			"contextIncluded": item.ContextIncluded,
+			"originalContent": item.OriginalContent,
+			"proposedDiff":    item.ProposedDiff,
 		})
 	}
 	params := service.ExecuteChangesParams{
@@ -516,6 +567,106 @@ func mapPipelineRunCurrent(item *service.PipelineRunCurrent) *pipelinetype.Pipel
 	}
 	response.NextAction = item.NextAction
 	return response
+}
+
+// ==================== 统计相关API ====================
+
+// GetStatisticsOverview
+// @tags Statistics
+// @summary 获取全局统计概览
+// @description 返回系统级别的统计概览数据，包括总流水线数、成功率、Token消耗等核心指标
+// @router /api/pipeline/statistics/overview [GET]
+// @produce application/json
+// @success 200 {object} pipelinetype.StatisticsOverviewEnvelope
+// @failure 500 {object} pipelinetype.ErrorEnvelope
+func (c *PipelineController) GetStatisticsOverview(ctx *gin.Context) {
+	result, err := c.pipelineService.GetStatisticsOverview(ctx.Request.Context())
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, err)
+		return
+	}
+	writeSuccess(ctx, http.StatusOK, result)
+}
+
+// GetStatisticsTrends
+// @tags Statistics
+// @summary 获取趋势统计数据
+// @description 按时间维度返回流水线运行趋势、Token消耗趋势等数据
+// @router /api/pipeline/statistics/trends [GET]
+// @param timeRange query string false "时间范围: today/7d/30d/custom" default(7d)
+// @param startTime query string false "开始时间，格式: RFC3339，timeRange=custom时必填"
+// @param endTime query string false "结束时间，格式: RFC3339，timeRange=custom时必填"
+// @produce application/json
+// @success 200 {object} pipelinetype.StatisticsTrendsEnvelope
+// @failure 400 {object} pipelinetype.ErrorEnvelope
+// @failure 500 {object} pipelinetype.ErrorEnvelope
+func (c *PipelineController) GetStatisticsTrends(ctx *gin.Context) {
+	timeRangeStr := ctx.DefaultQuery("timeRange", "7d")
+	timeRange := pipelinetype.TimeRange(timeRangeStr)
+
+	var startTime, endTime *time.Time
+	if timeRange == pipelinetype.TimeRangeCustom {
+		startStr := ctx.Query("startTime")
+		endStr := ctx.Query("endTime")
+		if startStr == "" || endStr == "" {
+			writeError(ctx, http.StatusBadRequest, fmt.Errorf("startTime and endTime are required for custom time range"))
+			return
+		}
+
+		start, err := time.Parse(time.RFC3339, startStr)
+		if err != nil {
+			writeError(ctx, http.StatusBadRequest, fmt.Errorf("invalid startTime format: %v", err))
+			return
+		}
+		end, err := time.Parse(time.RFC3339, endStr)
+		if err != nil {
+			writeError(ctx, http.StatusBadRequest, fmt.Errorf("invalid endTime format: %v", err))
+			return
+		}
+		startTime = &start
+		endTime = &end
+	}
+
+	result, err := c.pipelineService.GetStatisticsTrends(ctx.Request.Context(), timeRange, startTime, endTime)
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, err)
+		return
+	}
+	writeSuccess(ctx, http.StatusOK, result)
+}
+
+// GetStatisticsStages
+// @tags Statistics
+// @summary 获取阶段性能统计
+// @description 返回每个阶段的执行统计数据，包括平均耗时、成功率等
+// @router /api/pipeline/statistics/stages [GET]
+// @produce application/json
+// @success 200 {object} pipelinetype.StatisticsStagesEnvelope
+// @failure 500 {object} pipelinetype.ErrorEnvelope
+func (c *PipelineController) GetStatisticsStages(ctx *gin.Context) {
+	result, err := c.pipelineService.GetStatisticsStages(ctx.Request.Context())
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, err)
+		return
+	}
+	writeSuccess(ctx, http.StatusOK, result)
+}
+
+// GetStatisticsAgents
+// @tags Statistics
+// @summary 获取Agent运行统计
+// @description 返回Agent和模型维度的统计数据，包括调用次数、Token消耗、成功率等
+// @router /api/pipeline/statistics/agents [GET]
+// @produce application/json
+// @success 200 {object} pipelinetype.StatisticsAgentsEnvelope
+// @failure 500 {object} pipelinetype.ErrorEnvelope
+func (c *PipelineController) GetStatisticsAgents(ctx *gin.Context) {
+	result, err := c.pipelineService.GetStatisticsAgents(ctx.Request.Context())
+	if err != nil {
+		writeError(ctx, http.StatusInternalServerError, err)
+		return
+	}
+	writeSuccess(ctx, http.StatusOK, result)
 }
 
 func mapStageRunResponses(items []model.StageRun) []pipelinetype.StageRunResponse {

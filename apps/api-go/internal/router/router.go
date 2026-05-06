@@ -69,6 +69,7 @@ func New(deps Dependencies) *gin.Engine {
 	authenticated.GET("/pipeline-runs/:id/current", deps.PipelineController.GetRunCurrent)
 	authenticated.GET("/pipeline-runs/:id/stages", deps.PipelineController.ListStages)
 	authenticated.GET("/pipeline-runs/:id/artifacts", deps.PipelineController.ListArtifacts)
+	authenticated.GET("/pipeline-runs/:id/code-diff", deps.PipelineController.GetCodeDiff)
 	authenticated.GET("/pipeline-runs/:id/checkpoints", deps.PipelineController.ListCheckpoints)
 	authenticated.GET("/pipeline-runs/:id/agent-runs", deps.PipelineController.ListAgentRuns)
 	authenticated.GET("/pipeline-runs/:id/deliveries", deps.PipelineController.ListGitDeliveries)
@@ -80,6 +81,11 @@ func New(deps Dependencies) *gin.Engine {
 	authenticated.GET("/git-deliveries/:deliveryID", deps.PipelineController.GetGitDelivery)
 	authenticated.POST("/checkpoints/:checkpointID/approve", deps.PipelineController.ApproveCheckpoint)
 	authenticated.POST("/checkpoints/:checkpointID/reject", deps.PipelineController.RejectCheckpoint)
+	// 统计相关API
+	authenticated.GET("/pipeline/statistics/overview", deps.PipelineController.GetStatisticsOverview)
+	authenticated.GET("/pipeline/statistics/trends", deps.PipelineController.GetStatisticsTrends)
+	authenticated.GET("/pipeline/statistics/stages", deps.PipelineController.GetStatisticsStages)
+	authenticated.GET("/pipeline/statistics/agents", deps.PipelineController.GetStatisticsAgents)
 
 	// 飞书卡片回调接口（公网回调，需要签名验证）
 	engine.POST("/public/feishu/card/callback", deps.AuthController.HandleFeishuCardCallback)

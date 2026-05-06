@@ -153,22 +153,6 @@ export interface PipelineRunTimeline {
   summary: PipelineRunSummary
 }
 
-export interface SessionMessage {
-  id: string
-  role: 'user' | 'assistant' | 'system'
-  content: string
-  createdAt: string
-}
-
-export interface SessionDetail {
-  session: {
-    id: string
-    title: string
-    status: string
-  }
-  messages: SessionMessage[]
-}
-
 interface Envelope<T> {
   data?: T
   error?: string
@@ -191,6 +175,34 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error('接口未返回 data')
   }
   return payload.data
+}
+
+/** 与后端 pipeline.DefaultTemplateID 一致 */
+export const DEFAULT_PIPELINE_TEMPLATE_ID = 'feature-delivery'
+
+export interface PipelineRunDetail {
+  run: PipelineRun
+  stages: StageRun[]
+  artifacts: Artifact[]
+  checkpoints: Checkpoint[]
+}
+
+/** 将会话消息汇总为需求并创建 PipelineRun（后端不自动启动，需再调 start） */
+export async function createPipelineRunFromSession(input: {
+  sessionId: string
+  templateId?: string
+  targetRepo?: string
+  targetBranch?: string
+}): Promise<PipelineRunDetail> {
+  return request<PipelineRunDetail>('/api/pipeline-runs/from-session', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: input.sessionId,
+      templateId: input.templateId ?? '',
+      targetRepo: input.targetRepo ?? 'self',
+      targetBranch: input.targetBranch ?? 'main',
+    }),
+  })
 }
 
 export async function fetchPipelineRuns(): Promise<PipelineRun[]> {

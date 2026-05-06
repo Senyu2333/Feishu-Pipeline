@@ -8,11 +8,14 @@ import {
   type AgentRun,
   type Artifact,
   type PipelineRun,
+  type PipelineTemplate,
   type PipelineRunTimeline,
   fetchPipelineRuns,
+  fetchPipelineTemplates,
   fetchPipelineTimeline,
   formatDateTime,
   formatDuration,
+  hasCodeDiffContext,
   isCodeApprovalStage,
   isLiveRun,
   latestArtifact,
@@ -47,6 +50,7 @@ export default function Workflows() {
   const workflowChatDemo = useWorkflowChatDemoFlag()
 
   const [runs, setRuns] = useState<PipelineRun[]>([])
+  const [templates, setTemplates] = useState<PipelineTemplate[]>([])
   const [selectedRunId, setSelectedRunId] = useState('')
   const [timeline, setTimeline] = useState<PipelineRunTimeline | null>(null)
   const [loadingRuns, setLoadingRuns] = useState(true)
@@ -56,6 +60,7 @@ export default function Workflows() {
   const [createModalVisible, setCreateModalVisible] = useState(false)
   const [createLoading, setCreateLoading] = useState(false)
   const [githubRepos, setGithubRepos] = useState<{full_name: string; html_url: string; private: boolean}[]>([])
+  const [loadingTemplates, setLoadingTemplates] = useState(false)
   const [loadingRepos, setLoadingRepos] = useState(false)
   const [githubBranches, setGithubBranches] = useState<string[]>([])
   const [loadingBranches, setLoadingBranches] = useState(false)
@@ -69,6 +74,7 @@ export default function Workflows() {
   const [folderHistory, setFolderHistory] = useState<{token: string; name: string}[]>([])
   const [selectedDocUrls, setSelectedDocUrls] = useState<string[]>([])
   const [form] = Form.useForm<{
+    templateId: string
     title: string
     requirementText: string
     targetRepo: string
@@ -105,6 +111,23 @@ export default function Workflows() {
       setRuns([])
     } finally {
       setLoadingRuns(false)
+    }
+  }
+
+  const loadTemplates = async () => {
+    setLoadingTemplates(true)
+    try {
+      const items = await fetchPipelineTemplates()
+      setTemplates(items.filter(item => item.isActive))
+      const defaultTemplate = items.find(item => item.id === 'feature-delivery') || items.find(item => item.isActive)
+      if (defaultTemplate) {
+        form.setFieldValue('templateId', defaultTemplate.id)
+      }
+    } catch (err) {
+      message.warning(err instanceof Error ? err.message : '加载流水线模板失败')
+      setTemplates([])
+    } finally {
+      setLoadingTemplates(false)
     }
   }
 
@@ -152,11 +175,12 @@ export default function Workflows() {
     return () => window.clearInterval(timer)
   }, [timeline?.run.id, timeline?.run.status])
 
-  const showCodeApprovalFab = isCodeApprovalStage(timeline) || workflowChatDemo
+  const showCodeDiffChat = hasCodeDiffContext(timeline) || workflowChatDemo
+  const isApprovalCheckpoint = isCodeApprovalStage(timeline)
 
   useEffect(() => {
-    if (!showCodeApprovalFab) setApprovalChatOpen(false)
-  }, [showCodeApprovalFab])
+    if (!showCodeDiffChat) setApprovalChatOpen(false)
+  }, [showCodeDiffChat])
 
   const refreshAll = async () => {
     await loadRuns()
@@ -180,6 +204,7 @@ export default function Workflows() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: values.title,
+          templateId: values.templateId || 'feature-delivery',
           requirementText: values.requirementText,
           targetRepo: values.targetRepo || 'self',
           targetBranch: values.targetBranch || 'main',
@@ -252,6 +277,7 @@ export default function Workflows() {
   const handleOpenCreateModal = () => {
     setCreateModalVisible(true)
     setGithubBranches([])
+    void loadTemplates()
     void loadGithubRepos()
   }
 
@@ -364,6 +390,17 @@ export default function Workflows() {
     const status = selectedRun.status
     return (
       <Space>
+        {showCodeDiffChat ? (
+          <Tooltip title={isApprovalCheckpoint ? '打开代码 Diff 对话并处理审批' : '打开代码 Diff 对话'}>
+            <Button
+              type={isApprovalCheckpoint ? 'primary' : 'default'}
+              icon={<CodeOutlined />}
+              onClick={() => setApprovalChatOpen(true)}
+            >
+              Diff 对话
+            </Button>
+          </Tooltip>
+        ) : null}
         {status === 'draft' || status === 'failed' ? (
           <Tooltip title="启动">
             <Button
@@ -440,9 +477,9 @@ export default function Workflows() {
                 <Empty
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
                   description={
-                    <span className="text-on-surface-variant">
-                      暂无运行记录。可点上方「审批预览」加载 Mock，或新建 Pipeline；真实环境下仅在流水线进入「评审确认」待审批时会出现右侧图标。
-                    </span>
+                  <span className="text-on-surface-variant">
+                      暂无运行记录。可点上方「审批预览」加载 Mock，或新建 Pipeline；真实环境下代码生成后会出现 Diff 对话入口。
+                  </span>
                   }
                 />
               ) : null}
@@ -509,6 +546,12 @@ export default function Workflows() {
               <Metric title="AgentRun" value={`${timeline?.agentRuns.length ?? 0}`} />
             </div>
 
+            <PipelineRail
+              stages={timeline?.stages ?? []}
+              currentStageKey={timeline?.run.currentStageKey}
+              loading={loadingTimeline}
+            />
+
             <div className="mt-4 grid min-h-0 flex-1 grid-cols-[1fr_360px] gap-4 overflow-hidden">
               <div className="min-w-0 overflow-y-auto">
                 <Card className="!rounded-lg">
@@ -543,6 +586,11 @@ export default function Workflows() {
                     <Field label="下一动作" value={nextActionLabel(timeline?.current?.nextAction)} />
                     <Field label="最新产物" value={currentArtifact?.title || '-'} />
                     <Field label="交付草稿" value={timeline?.current?.delivery?.prmrTitle || '-'} />
+                    {showCodeDiffChat ? (
+                      <Button block icon={<CodeOutlined />} onClick={() => setApprovalChatOpen(true)}>
+                        打开代码 Diff 对话
+                      </Button>
+                    ) : null}
                   </div>
                 </Card>
 
@@ -558,8 +606,8 @@ export default function Workflows() {
         </div>
       </main>
 
-      {showCodeApprovalFab && !approvalChatOpen ? (
-        <Tooltip title="代码审批：查看 Diff 与对话" placement="left">
+      {showCodeDiffChat && !approvalChatOpen ? (
+        <Tooltip title={isApprovalCheckpoint ? '代码审批：查看 Diff 与对话' : '查看代码 Diff 与对话'} placement="left">
           <Button
             type="primary"
             shape="circle"
@@ -571,7 +619,7 @@ export default function Workflows() {
           />
         </Tooltip>
       ) : null}
-      {showCodeApprovalFab && approvalChatOpen ? (
+      {showCodeDiffChat && approvalChatOpen ? (
         <PipelineChatPanel
           runId={timeline?.run?.id ?? selectedRunId}
           embedded
@@ -587,6 +635,8 @@ export default function Workflows() {
         loading={createLoading}
         form={form}
         githubRepos={githubRepos.map(r => ({ fullName: r.full_name, htmlUrl: r.html_url, isPrivate: r.private }))}
+        templates={templates}
+        loadingTemplates={loadingTemplates}
         loadingRepos={loadingRepos}
         githubBranches={githubBranches}
         loadingBranches={loadingBranches}
@@ -677,6 +727,61 @@ function Metric({ title, value }: { title: string; value: string }) {
   )
 }
 
+function PipelineRail({ stages, currentStageKey, loading }: { stages: PipelineRunTimeline['stages']; currentStageKey?: string; loading: boolean }) {
+  if (loading && stages.length === 0) {
+    return <Skeleton className="mt-4" active paragraph={{ rows: 1 }} />
+  }
+  if (stages.length === 0) return null
+
+  return (
+    <div className="mt-4 rounded-lg border border-outline-variant bg-white px-4 py-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="font-semibold text-on-surface">执行轨道</div>
+        <div className="text-xs text-on-surface-variant">当前：{stageLabel(currentStageKey)}</div>
+      </div>
+      <div className="overflow-x-auto pb-1">
+        <div className="flex min-w-max items-stretch">
+          {stages.map((stage, index) => {
+            const meta = stageStatusMeta(stage.status)
+            const active = stage.stageKey === currentStageKey
+            const done = stage.status === 'succeeded'
+            const failed = stage.status === 'failed'
+            const waiting = stage.status === 'waiting_approval'
+            const dotClass = failed
+              ? 'border-red-500 bg-red-50 text-red-600'
+              : done
+                ? 'border-green-500 bg-green-50 text-green-600'
+                : waiting
+                  ? 'border-amber-500 bg-amber-50 text-amber-600'
+                  : active
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-outline-variant bg-surface-container-high text-on-surface-variant'
+            return (
+              <div key={stage.id} className="flex items-center">
+                <div className={`w-36 rounded-lg border px-3 py-2 ${active ? 'border-primary bg-primary/5' : 'border-outline-variant bg-white'}`}>
+                  <div className="flex items-center gap-2">
+                    <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-xs font-semibold ${dotClass}`}>
+                      {stage.status === 'running' ? <SyncOutlined spin /> : index + 1}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate text-xs font-semibold text-on-surface">{stageLabel(stage.stageKey)}</div>
+                      <div className="truncate text-[11px] text-on-surface-variant">attempt {stage.attempt}</div>
+                    </div>
+                  </div>
+                  <Tag className="!mt-2" color={meta.color}>{meta.label}</Tag>
+                </div>
+                {index < stages.length - 1 ? (
+                  <div className={`h-px w-8 ${done ? 'bg-green-400' : 'bg-outline-variant'}`} />
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function StageRow({ stage, active }: { stage: PipelineRunTimeline['stages'][number]; active: boolean }) {
   const meta = stageStatusMeta(stage.status)
   return (
@@ -734,6 +839,7 @@ function AgentRunItem({ agentRun }: { agentRun: AgentRun }) {
 
 // 新建 Pipeline Modal
 interface CreateFormValues {
+  templateId: string
   title: string
   requirementText: string
   targetRepo: string
@@ -747,6 +853,8 @@ function CreatePipelineModal({
   loading,
   form,
   githubRepos,
+  templates,
+  loadingTemplates,
   loadingRepos,
   githubBranches,
   loadingBranches,
@@ -762,6 +870,8 @@ function CreatePipelineModal({
   loading: boolean
   form: ReturnType<typeof Form.useForm<CreateFormValues>>[0]
   githubRepos: {fullName: string; htmlUrl: string; isPrivate?: boolean}[]
+  templates: PipelineTemplate[]
+  loadingTemplates: boolean
   loadingRepos: boolean
   githubBranches: string[]
   loadingBranches: boolean
@@ -784,10 +894,31 @@ function CreatePipelineModal({
         layout="vertical"
         onFinish={onSubmit}
         initialValues={{
+          templateId: 'feature-delivery',
           targetRepo: 'self',
           targetBranch: 'main',
         }}
       >
+        <Form.Item
+          name="templateId"
+          label="流水线模板"
+          rules={[{ required: true, message: '请选择流水线模板' }]}
+        >
+          <Select
+            loading={loadingTemplates}
+            placeholder="选择研发流程模板"
+            optionLabelProp="label"
+          >
+            {templates.map(template => (
+              <Select.Option key={template.id} value={template.id} label={template.name}>
+                <div className="py-1">
+                  <div className="text-sm font-medium text-on-surface">{template.name}</div>
+                  <div className="mt-1 whitespace-normal text-xs text-on-surface-variant">{template.description}</div>
+                </div>
+              </Select.Option>
+            ))}
+          </Select>
+        </Form.Item>
         <Form.Item
           name="title"
           label="流水线名称"

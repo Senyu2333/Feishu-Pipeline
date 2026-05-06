@@ -10,6 +10,11 @@
 - [x] 修复 assistant 确认回复未触发发布的问题
 - [x] 会话所有者本人可发布自己的需求
 - [x] 会话页短轮询展示异步创建的 Pipeline
+- [x] 新增 Bug Fix / Feature / Refactor 三类预置 Pipeline 模板
+- [x] Workflows 新建 Pipeline 支持选择模板
+- [x] Workflows 在存在代码变更上下文时展示 Diff 对话入口，不再只依赖审批 checkpoint
+- [x] Workflows 增加横向执行轨道，强化流水线阶段可视化
+- [x] Diff 对话优先展示结构化 `code_diff` 产物，并保留 AgentRun diff 兜底
 - [ ] 真实飞书租户 smoke：docx 创建与消息送达
 - [ ] 真实演示 smoke：Pipeline 自动流转到首个 checkpoint
 

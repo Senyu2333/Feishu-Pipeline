@@ -4,14 +4,17 @@ import { CloseOutlined, DownOutlined, LeftOutlined, RightOutlined, SendOutlined,
 import { useRouterState } from '@tanstack/react-router'
 import {
   approveCheckpoint,
+  fetchCodeDiff,
   fetchSessionDetail,
   fetchPipelineAgentRuns,
   fetchPipelineCurrent,
   fetchPipelineRuns,
   rejectCheckpoint,
   sendSessionMessage,
+  isCodeAgentRun,
   stageLabel,
   type AgentRun,
+  type CodeDiffResponse,
   type PipelineRunCurrent,
   type SessionMessage,
 } from '../lib/pipeline'
@@ -60,6 +63,13 @@ function extractDiffPreview(agentRun?: AgentRun): { before: string; after: strin
     before: agentRun.inputJson || '',
     after: agentRun.outputJson || '',
   }
+}
+
+function selectDiffAgentRun(agentRuns: AgentRun[]): AgentRun | undefined {
+  for (let i = agentRuns.length - 1; i >= 0; i -= 1) {
+    if (isCodeAgentRun(agentRuns[i])) return agentRuns[i]
+  }
+  return agentRuns.length > 0 ? agentRuns[agentRuns.length - 1] : undefined
 }
 
 function mapSessionMessages(messages: SessionMessage[]): ChatMessage[] {
@@ -156,12 +166,42 @@ function renderUnifiedDiff(before: string, after: string) {
   )
 }
 
+function renderProposedDiff(diffText: string) {
+  const lines = diffText.split('\n')
+  return (
+    <div className="max-h-64 overflow-auto rounded border border-slate-200 bg-[#0b1020] p-2 font-mono text-[11px] leading-5 text-slate-100">
+      {lines.map((line, idx) => {
+        const kind = line.startsWith('+') && !line.startsWith('+++')
+          ? 'add'
+          : line.startsWith('-') && !line.startsWith('---')
+            ? 'remove'
+            : 'context'
+        const className =
+          kind === 'add'
+            ? 'bg-emerald-500/20 text-emerald-100'
+            : kind === 'remove'
+              ? 'bg-rose-500/20 text-rose-100'
+              : line.startsWith('@@')
+                ? 'text-sky-200'
+                : ''
+        return (
+          <div key={`proposed_diff_${idx}`} className={`rounded px-1 ${className}`}>
+            <span className="whitespace-pre-wrap break-all">{line || ' '}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function PipelineChatPanel({ runId: runIdProp, embedded, onRequestClose, onTimelineDirty }: PipelineChatPanelProps = {}) {
   const location = useRouterState({ select: state => state.location })
   const [collapsed, setCollapsed] = useState(false)
   const [resolvingData, setResolvingData] = useState(false)
   const [current, setCurrent] = useState<PipelineRunCurrent | null>(null)
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([])
+  const [codeDiff, setCodeDiff] = useState<CodeDiffResponse | null>(null)
+  const [selectedDiffFile, setSelectedDiffFile] = useState('')
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -175,19 +215,28 @@ export default function PipelineChatPanel({ runId: runIdProp, embedded, onReques
   const checkpointId = current?.checkpoint?.id || ''
   const currentStage = current?.stage?.stageKey || current?.run?.currentStageKey
   const latestAgentRun = agentRuns.length > 0 ? agentRuns[agentRuns.length - 1] : undefined
+  const diffAgentRun = selectDiffAgentRun(agentRuns)
   const canDecide = Boolean(checkpointId && current?.run?.status === 'waiting_approval' && !deciding)
   const canSend = Boolean(sessionId && input.trim() && !sending)
-  const diff = extractDiffPreview(latestAgentRun)
-  const shouldShowDecision = Boolean(canDecide && latestAgentRun)
+  const diff = extractDiffPreview(diffAgentRun)
+  const shouldShowDecision = Boolean(canDecide && (latestAgentRun || codeDiff))
   const lastAssistantMessageId = [...chatMessages].reverse().find(item => item.role === 'assistant')?.id
+  const selectedChange = codeDiff?.changeSet.find(item => item.filePath === selectedDiffFile) || codeDiff?.changeSet[0]
 
   const reloadRunContext = async (targetRunId: string) => {
-    const [currentData, agentRunData] = await Promise.all([
+    const [currentData, agentRunData, codeDiffData] = await Promise.all([
       fetchPipelineCurrent(targetRunId),
       fetchPipelineAgentRuns(targetRunId),
+      fetchCodeDiff(targetRunId).catch(() => null),
     ])
     setCurrent(currentData)
     setAgentRuns(agentRunData)
+    setCodeDiff(codeDiffData)
+    if (codeDiffData?.changeSet.length) {
+      setSelectedDiffFile(prev => codeDiffData.changeSet.some(item => item.filePath === prev) ? prev : codeDiffData.changeSet[0].filePath)
+    } else {
+      setSelectedDiffFile('')
+    }
     if (currentData.run.sourceSessionId) {
       const sessionDetail = await fetchSessionDetail(currentData.run.sourceSessionId)
       setChatMessages(mapSessionMessages(sessionDetail.messages))
@@ -393,7 +442,7 @@ export default function PipelineChatPanel({ runId: runIdProp, embedded, onReques
     <div className={`fixed right-0 top-0 z-40 h-screen border-l border-slate-200 bg-white shadow-xl transition-all duration-200 ${collapsed ? 'w-12' : 'w-[420px]'}`}>
       <div className="flex h-full flex-col">
         <div className="flex items-center justify-between border-b border-slate-100 px-3 py-3">
-          {!collapsed ? <Typography.Text strong>代码审批</Typography.Text> : null}
+          {!collapsed ? <Typography.Text strong>代码 Diff 对话</Typography.Text> : null}
           <div className="flex shrink-0 items-center gap-0">
             {embedded && onRequestClose ? (
               <Button
@@ -425,12 +474,53 @@ export default function PipelineChatPanel({ runId: runIdProp, embedded, onReques
               {resolvingData ? (
                 <div className="flex items-center gap-2 text-slate-500"><Spin size="small" /> 加载上下文...</div>
               ) : null}
+              {codeDiff?.changeSet.length ? (
+                <div className="rounded-2xl rounded-bl-md bg-white px-3 py-2 text-xs shadow-sm">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <div className="font-medium text-slate-700">代码 Diff · {codeDiff.changeSet.length} 个文件</div>
+                    <Tag color="blue">结构化产物</Tag>
+                  </div>
+                  {codeDiff.summary ? <div className="mb-2 whitespace-pre-wrap text-slate-600">{codeDiff.summary}</div> : null}
+                  <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
+                    {codeDiff.changeSet.map(item => (
+                      <Button
+                        key={item.filePath}
+                        size="small"
+                        type={item.filePath === selectedChange?.filePath ? 'primary' : 'default'}
+                        onClick={() => setSelectedDiffFile(item.filePath)}
+                      >
+                        {item.filePath}
+                      </Button>
+                    ))}
+                  </div>
+                  {selectedChange ? (
+                    <div className="space-y-2">
+                      <div className="rounded border border-slate-200 bg-slate-50 p-2">
+                        <div className="font-medium text-slate-600">{selectedChange.changeType} · {selectedChange.reason || '待审查变更'}</div>
+                      </div>
+                      {selectedChange.proposedDiff
+                        ? renderProposedDiff(selectedChange.proposedDiff)
+                        : renderUnifiedDiff(selectedChange.originalContent || '', selectedChange.proposedPatch || '')}
+                    </div>
+                  ) : null}
+                  {shouldShowDecision ? (
+                    <div className="mt-2 flex gap-2">
+                      <Button type="primary" size="small" disabled={!canDecide} loading={deciding === 'approve'} onClick={() => void handleApprove()}>
+                        Resolve
+                      </Button>
+                      <Button danger size="small" disabled={!canDecide} loading={deciding === 'reject'} onClick={() => void handleReject()}>
+                        Reject
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               {agentRuns.map(run => (
                 <div key={run.id} className="flex justify-start">
                   <div className="max-w-[92%] rounded-2xl rounded-bl-md bg-white px-3 py-2 text-xs shadow-sm">
                     <div className="mb-1 font-medium text-slate-600">AI · {run.agentKey}</div>
                     <pre className="max-h-40 overflow-auto whitespace-pre-wrap">{run.outputJson || '(无输出)'}</pre>
-                    {latestAgentRun?.id === run.id ? (
+                    {!codeDiff?.changeSet.length && diffAgentRun?.id === run.id ? (
                       <div className="mt-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
                         <button
                           type="button"
@@ -447,7 +537,7 @@ export default function PipelineChatPanel({ runId: runIdProp, embedded, onReques
                         ) : null}
                       </div>
                     ) : null}
-                    {shouldShowDecision && latestAgentRun?.id === run.id ? (
+                    {!codeDiff?.changeSet.length && shouldShowDecision && diffAgentRun?.id === run.id ? (
                       <div className="mt-2 flex gap-2">
                         <Button type="primary" size="small" disabled={!canDecide} loading={deciding === 'approve'} onClick={() => void handleApprove()}>
                           Resolve
@@ -480,7 +570,7 @@ export default function PipelineChatPanel({ runId: runIdProp, embedded, onReques
                   </div>
                 </div>
               ))}
-              {!resolvingData && agentRuns.length === 0 && chatMessages.length === 0 ? (
+              {!resolvingData && agentRuns.length === 0 && chatMessages.length === 0 && !codeDiff?.changeSet.length ? (
                 <div className="text-xs text-slate-400">暂无可展示消息，进入审批节点后会显示 Agent 记录。</div>
               ) : null}
             </div>

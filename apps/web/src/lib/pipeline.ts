@@ -153,6 +153,22 @@ export interface PipelineRunTimeline {
   summary: PipelineRunSummary
 }
 
+export interface SessionMessage {
+  id: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  createdAt: string
+}
+
+export interface SessionDetail {
+  session: {
+    id: string
+    title: string
+    status: string
+  }
+  messages: SessionMessage[]
+}
+
 interface Envelope<T> {
   data?: T
   error?: string
@@ -193,6 +209,7 @@ export async function fetchPipelineDeliveries(runId: string): Promise<GitDeliver
   const data = await request<{ deliveries: GitDelivery[] }>(`/api/pipeline-runs/${runId}/deliveries`)
   return data.deliveries
 }
+
 
 export async function fetchGitDelivery(deliveryId: string): Promise<GitDelivery> {
   return request<GitDelivery>(`/api/git-deliveries/${deliveryId}`)
@@ -369,6 +386,14 @@ export function nextActionLabel(action?: string): string {
     terminated: '已终止',
   }
   return action ? labels[action] || action : '等待数据'
+}
+
+/** 待审批且为「评审确认」代码检查点（含代码 Diff），用于工作台右侧审批面板入口 */
+export function isCodeApprovalStage(timeline: PipelineRunTimeline | null): boolean {
+  if (!timeline || timeline.run.status !== 'waiting_approval') return false
+  if (timeline.run.currentStageKey === 'checkpoint_review') return true
+  const pending = timeline.checkpoints?.find(c => c.status === 'pending')
+  return pending?.checkpointType === 'code_review'
 }
 
 export function formatDateTime(value?: string): string {

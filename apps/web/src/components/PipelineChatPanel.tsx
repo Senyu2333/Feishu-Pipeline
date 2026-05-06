@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button, Input, Space, Spin, Tag, Typography, message } from 'antd'
-import { DownOutlined, LeftOutlined, RightOutlined, SendOutlined, UpOutlined } from '@ant-design/icons'
+import { CloseOutlined, DownOutlined, LeftOutlined, RightOutlined, SendOutlined, UpOutlined } from '@ant-design/icons'
 import { useRouterState } from '@tanstack/react-router'
 import {
   approveCheckpoint,
@@ -71,6 +71,15 @@ function mapSessionMessages(messages: SessionMessage[]): ChatMessage[] {
       content: item.content,
       createdAt: item.createdAt,
     }))
+}
+
+export type PipelineChatPanelProps = {
+  /** 嵌入工作台时传入当前 Run，优先于 URL */
+  runId?: string
+  embedded?: boolean
+  onRequestClose?: () => void
+  /** 审批通过/驳回后通知父级刷新（如工作台 timeline） */
+  onTimelineDirty?: () => void
 }
 
 type DiffLine = {
@@ -147,7 +156,7 @@ function renderUnifiedDiff(before: string, after: string) {
   )
 }
 
-export default function PipelineChatPanel() {
+export default function PipelineChatPanel({ runId: runIdProp, embedded, onRequestClose, onTimelineDirty }: PipelineChatPanelProps = {}) {
   const location = useRouterState({ select: state => state.location })
   const [collapsed, setCollapsed] = useState(false)
   const [resolvingData, setResolvingData] = useState(false)
@@ -160,7 +169,7 @@ export default function PipelineChatPanel() {
   const [diffExpanded, setDiffExpanded] = useState(true)
   const messagesRef = useRef<HTMLDivElement | null>(null)
 
-  const runId = extractRunId(location.pathname, location.searchStr)
+  const runId = (runIdProp && runIdProp.trim()) || extractRunId(location.pathname, location.searchStr)
   const isDemoMode = new URLSearchParams(location.searchStr).get('chatDemo') === '1'
   const sessionId = current?.run?.sourceSessionId || ''
   const checkpointId = current?.checkpoint?.id || ''
@@ -348,6 +357,7 @@ export default function PipelineChatPanel() {
       if (current?.run?.id) {
         await reloadRunContext(current.run.id)
       }
+      onTimelineDirty?.()
       setCollapsed(true)
     } catch (err) {
       message.error(err instanceof Error ? err.message : '审批失败')
@@ -370,6 +380,7 @@ export default function PipelineChatPanel() {
       if (current?.run?.id) {
         await reloadRunContext(current.run.id)
       }
+      onTimelineDirty?.()
       setCollapsed(true)
     } catch (err) {
       message.error(err instanceof Error ? err.message : '驳回失败')
@@ -382,13 +393,23 @@ export default function PipelineChatPanel() {
     <div className={`fixed right-0 top-0 z-40 h-screen border-l border-slate-200 bg-white shadow-xl transition-all duration-200 ${collapsed ? 'w-12' : 'w-[420px]'}`}>
       <div className="flex h-full flex-col">
         <div className="flex items-center justify-between border-b border-slate-100 px-3 py-3">
-          {!collapsed ? <Typography.Text strong>PipelineChatPanel</Typography.Text> : null}
-          <Button
-            type="text"
-            icon={collapsed ? <LeftOutlined /> : <RightOutlined />}
-            onClick={() => setCollapsed(prev => !prev)}
-            aria-label={collapsed ? '展开聊天面板' : '折叠聊天面板'}
-          />
+          {!collapsed ? <Typography.Text strong>代码审批</Typography.Text> : null}
+          <div className="flex shrink-0 items-center gap-0">
+            {embedded && onRequestClose ? (
+              <Button
+                type="text"
+                icon={<CloseOutlined />}
+                onClick={() => onRequestClose()}
+                aria-label="关闭面板"
+              />
+            ) : null}
+            <Button
+              type="text"
+              icon={collapsed ? <LeftOutlined /> : <RightOutlined />}
+              onClick={() => setCollapsed(prev => !prev)}
+              aria-label={collapsed ? '展开聊天面板' : '折叠聊天面板'}
+            />
+          </div>
         </div>
 
         {collapsed ? null : (

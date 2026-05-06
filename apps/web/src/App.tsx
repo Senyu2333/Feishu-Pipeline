@@ -10,6 +10,7 @@ import Session from './pages/Session'
 import Debug from './pages/Debug'
 import { APIDocument } from './pages/Swagger'
 import Assets from './pages/Assets'
+import PipelineChatPanelDemo from './pages/PipelineChatPanelDemo'
 
 
 
@@ -35,6 +36,9 @@ const newRequirementRoute = createRoute({
 const workflowsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/workflows',
+  validateSearch: (search: Record<string, unknown>): { chatDemo?: string } => ({
+    chatDemo: search.chatDemo as string | undefined,
+  }),
   component: Workflows,
 })
 
@@ -86,7 +90,16 @@ const assetsRoute = createRoute({
   component: Assets,
 })
 
-const routeTree = rootRoute.addChildren([indexRoute, newRequirementRoute, workflowsRoute, monitoringRoute, deliveryRoute, authCallbackRoute, sessionRoute, debugRoute, swaggerRoute, assetsRoute])
+const pipelineChatPanelDemoRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/pipeline-chat-demo',
+  validateSearch: (search: Record<string, unknown>): { chatDemo?: string } => ({
+    chatDemo: search.chatDemo as string | undefined,
+  }),
+  component: PipelineChatPanelDemo,
+})
+
+const routeTree = rootRoute.addChildren([indexRoute, newRequirementRoute, workflowsRoute, monitoringRoute, deliveryRoute, authCallbackRoute, sessionRoute, debugRoute, swaggerRoute, assetsRoute, pipelineChatPanelDemoRoute])
 const router = createRouter({ routeTree })
 
 declare module '@tanstack/react-router' {

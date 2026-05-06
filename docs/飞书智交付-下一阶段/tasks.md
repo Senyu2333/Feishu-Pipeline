@@ -509,9 +509,20 @@ S3-6 Swagger、测试与演示验收
 - [x] 判断入口时覆盖 `code_diff` 产物、代码生成/评审 AgentRun、代码阶段上下文
 - [x] Diff 对话优先读取 `/api/pipeline-runs/:id/code-diff` 的结构化变更产物
 - [x] Diff 对话按文件展示摘要、变更原因和行级 diff，并保留 AgentRun 输入/输出 diff 兜底
+- [x] Diff 对话嵌入 Workflows 时复用父页面 timeline，不再每次打开都请求慢接口 `/api/pipeline-runs/:id/current`
+- [x] `code-diff` 请求增加短期前端缓存，减少重复打开面板时的等待
+- [x] Diff 行级展示改为浅色背景、行号、文件按钮截断，提升可读性
 - [x] Workflows 新增横向执行轨道，展示阶段顺序、当前阶段、成功、运行中、待审批和失败状态
+- [x] 阶段轨道和阶段明细补充每一步职责说明、attempt 与起止时间
 - [ ] 将结构化 diff 进一步升级为可折叠逐文件 Split View，并支持对单文件发起修改意见
 - 说明：本阶段先解决“前端看不到对话式 diff”和“流水线执行过程不直观”两个演示断点，确保代码生成后即可发现 Diff 对话能力，审批点到达后同一面板可直接 Resolve / Reject。
+
+### 10.9 S4-9：GitHub 绑定体验修复
+- [x] 后端开放 `/api/auth/github/config`，返回当前 GitHub OAuth 是否启用、clientId 与 callbackUrl
+- [x] 前端绑定 GitHub 时不再硬编码 clientId，统一读取后端配置
+- [x] 未配置 GitHub OAuth 时给出明确错误，不再直接跳转后失败
+- [x] GitHub 绑定回调显示后端返回的具体错误，便于排查 redirect_uri / client_secret / 网络问题
+- [ ] 使用真实 GitHub OAuth App 完成绑定、仓库列表和分支列表 smoke
 
 ### 10.7 S4-7：项目-流水线联动
 - [x] 修复AI创建项目后前端看不到流水线的问题

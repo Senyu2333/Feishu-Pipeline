@@ -24,7 +24,7 @@ function postFeishuSSOLogin(code: string): Promise<Response> {
 }
 
 // 调用后端接口绑定 GitHub 账号到当前登录用户
-async function bindGitHub(code: string): Promise<boolean> {
+async function bindGitHub(code: string): Promise<void> {
   try {
     const res = await fetch(`${API_BASE}/auth/github/bind`, {
       method: 'POST',
@@ -32,9 +32,12 @@ async function bindGitHub(code: string): Promise<boolean> {
       credentials: 'include',
       body: JSON.stringify({ code }),
     })
-    return res.ok
-  } catch {
-    return false
+    const payload = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      throw new Error(payload.error || 'GitHub 绑定失败')
+    }
+  } catch (err) {
+    throw err instanceof Error ? err : new Error('GitHub 绑定失败')
   }
 }
 
@@ -73,18 +76,14 @@ export default function AuthCallback() {
         
         // 调用后端绑定接口
         try {
-          const success = await bindGitHub(code)
-          if (success) {
-            sessionStorage.removeItem('github_bind_mode')
-            sessionStorage.removeItem('github_auth_state')
-            message.success('GitHub 绑定成功')
-            navigate({ to: '/' })
-          } else {
-            throw new Error('绑定失败')
-          }
+          await bindGitHub(code)
+          sessionStorage.removeItem('github_bind_mode')
+          sessionStorage.removeItem('github_auth_state')
+          message.success('GitHub 绑定成功')
+          navigate({ to: '/' })
         } catch (e) {
           console.error('GitHub bind error:', e)
-          message.error('GitHub 绑定失败，请重试')
+          message.error(e instanceof Error ? e.message : 'GitHub 绑定失败，请重试')
           sessionStorage.removeItem('github_bind_mode')
           sessionStorage.removeItem('github_auth_state')
           navigate({ to: '/' })

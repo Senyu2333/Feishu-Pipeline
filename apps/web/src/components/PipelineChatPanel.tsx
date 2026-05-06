@@ -4,7 +4,7 @@ import { CloseOutlined, DownOutlined, LeftOutlined, RightOutlined, SendOutlined,
 import { useRouterState } from '@tanstack/react-router'
 import {
   approveCheckpoint,
-  fetchCodeDiff,
+  fetchCodeDiffCached,
   fetchSessionDetail,
   fetchPipelineAgentRuns,
   fetchPipelineCurrent,
@@ -16,6 +16,7 @@ import {
   type AgentRun,
   type CodeDiffResponse,
   type PipelineRunCurrent,
+  type PipelineRunTimeline,
   type SessionMessage,
 } from '../lib/pipeline'
 
@@ -86,6 +87,7 @@ function mapSessionMessages(messages: SessionMessage[]): ChatMessage[] {
 export type PipelineChatPanelProps = {
   /** 嵌入工作台时传入当前 Run，优先于 URL */
   runId?: string
+  timeline?: PipelineRunTimeline | null
   embedded?: boolean
   onRequestClose?: () => void
   /** 审批通过/驳回后通知父级刷新（如工作台 timeline） */
@@ -144,21 +146,19 @@ function buildUnifiedDiff(before: string, after: string): DiffLine[] {
 function renderUnifiedDiff(before: string, after: string) {
   const lines = buildUnifiedDiff(before, after)
   return (
-    <div className="max-h-48 overflow-auto rounded border border-slate-200 bg-[#0b1020] p-2 font-mono text-[11px] leading-5 text-slate-100">
+    <div className="max-h-72 overflow-auto rounded border border-slate-200 bg-white p-2 font-mono text-[12px] leading-5 text-slate-700">
       {lines.length === 0 ? <div className="text-slate-400">(无)</div> : null}
       {lines.map((line, idx) => {
         const className =
           line.kind === 'add'
-            ? 'bg-emerald-500/20 text-emerald-100'
+            ? 'bg-emerald-50 text-emerald-800'
             : line.kind === 'remove'
-              ? 'bg-rose-500/20 text-rose-100 line-through decoration-rose-200/70'
-              : ''
+              ? 'bg-rose-50 text-rose-800 line-through decoration-rose-400/70'
+              : 'text-slate-600'
         return (
-          <div
-            key={`diff_${idx}`}
-            className={`rounded px-1 ${className}`}
-          >
-            <span className="whitespace-pre-wrap break-all">{line.text}</span>
+          <div key={`diff_${idx}`} className={`grid grid-cols-[44px_1fr] rounded px-1 ${className}`}>
+            <span className="select-none pr-2 text-right text-slate-400">{idx + 1}</span>
+            <span className="whitespace-pre-wrap break-words">{line.text || ' '}</span>
           </div>
         )
       })}
@@ -169,7 +169,7 @@ function renderUnifiedDiff(before: string, after: string) {
 function renderProposedDiff(diffText: string) {
   const lines = diffText.split('\n')
   return (
-    <div className="max-h-64 overflow-auto rounded border border-slate-200 bg-[#0b1020] p-2 font-mono text-[11px] leading-5 text-slate-100">
+    <div className="max-h-80 overflow-auto rounded border border-slate-200 bg-white p-2 font-mono text-[12px] leading-5 text-slate-700">
       {lines.map((line, idx) => {
         const kind = line.startsWith('+') && !line.startsWith('+++')
           ? 'add'
@@ -178,15 +178,16 @@ function renderProposedDiff(diffText: string) {
             : 'context'
         const className =
           kind === 'add'
-            ? 'bg-emerald-500/20 text-emerald-100'
+            ? 'bg-emerald-50 text-emerald-800'
             : kind === 'remove'
-              ? 'bg-rose-500/20 text-rose-100'
+              ? 'bg-rose-50 text-rose-800'
               : line.startsWith('@@')
-                ? 'text-sky-200'
-                : ''
+                ? 'bg-sky-50 text-sky-800'
+                : 'text-slate-600'
         return (
-          <div key={`proposed_diff_${idx}`} className={`rounded px-1 ${className}`}>
-            <span className="whitespace-pre-wrap break-all">{line || ' '}</span>
+          <div key={`proposed_diff_${idx}`} className={`grid grid-cols-[44px_1fr] rounded px-1 ${className}`}>
+            <span className="select-none pr-2 text-right text-slate-400">{idx + 1}</span>
+            <span className="whitespace-pre-wrap break-words">{line || ' '}</span>
           </div>
         )
       })}
@@ -194,7 +195,20 @@ function renderProposedDiff(diffText: string) {
   )
 }
 
-export default function PipelineChatPanel({ runId: runIdProp, embedded, onRequestClose, onTimelineDirty }: PipelineChatPanelProps = {}) {
+function currentFromTimeline(timeline?: PipelineRunTimeline | null): PipelineRunCurrent | null {
+  if (!timeline) return null
+  return {
+    run: timeline.run,
+    stage: timeline.current?.stage || timeline.stages.find(stage => stage.stageKey === timeline.run.currentStageKey),
+    artifact: timeline.current?.artifact || timeline.artifacts[timeline.artifacts.length - 1],
+    checkpoint: timeline.current?.checkpoint || timeline.checkpoints.find(checkpoint => checkpoint.status === 'pending'),
+    agentRun: timeline.current?.agentRun || timeline.agentRuns[timeline.agentRuns.length - 1],
+    delivery: timeline.current?.delivery || timeline.deliveries[timeline.deliveries.length - 1],
+    nextAction: timeline.current?.nextAction || '',
+  }
+}
+
+export default function PipelineChatPanel({ runId: runIdProp, timeline: timelineProp, embedded, onRequestClose, onTimelineDirty }: PipelineChatPanelProps = {}) {
   const location = useRouterState({ select: state => state.location })
   const [collapsed, setCollapsed] = useState(false)
   const [resolvingData, setResolvingData] = useState(false)
@@ -209,7 +223,7 @@ export default function PipelineChatPanel({ runId: runIdProp, embedded, onReques
   const [diffExpanded, setDiffExpanded] = useState(true)
   const messagesRef = useRef<HTMLDivElement | null>(null)
 
-  const runId = (runIdProp && runIdProp.trim()) || extractRunId(location.pathname, location.searchStr)
+  const runId = (runIdProp && runIdProp.trim()) || timelineProp?.run.id || extractRunId(location.pathname, location.searchStr)
   const isDemoMode = new URLSearchParams(location.searchStr).get('chatDemo') === '1'
   const sessionId = current?.run?.sourceSessionId || ''
   const checkpointId = current?.checkpoint?.id || ''
@@ -223,11 +237,12 @@ export default function PipelineChatPanel({ runId: runIdProp, embedded, onReques
   const lastAssistantMessageId = [...chatMessages].reverse().find(item => item.role === 'assistant')?.id
   const selectedChange = codeDiff?.changeSet.find(item => item.filePath === selectedDiffFile) || codeDiff?.changeSet[0]
 
-  const reloadRunContext = async (targetRunId: string) => {
+  const reloadRunContext = async (targetRunId: string, options: { forceDiff?: boolean; useTimeline?: boolean } = {}) => {
+    const seededCurrent = options.useTimeline ? currentFromTimeline(timelineProp) : null
     const [currentData, agentRunData, codeDiffData] = await Promise.all([
-      fetchPipelineCurrent(targetRunId),
-      fetchPipelineAgentRuns(targetRunId),
-      fetchCodeDiff(targetRunId).catch(() => null),
+      seededCurrent ? Promise.resolve(seededCurrent) : fetchPipelineCurrent(targetRunId),
+      timelineProp?.run.id === targetRunId ? Promise.resolve(timelineProp.agentRuns) : fetchPipelineAgentRuns(targetRunId),
+      fetchCodeDiffCached(targetRunId, options.forceDiff).catch(() => null),
     ])
     setCurrent(currentData)
     setAgentRuns(agentRunData)
@@ -323,7 +338,7 @@ export default function PipelineChatPanel({ runId: runIdProp, embedded, onReques
           }
           return
         }
-        await reloadRunContext(targetRunId)
+        await reloadRunContext(targetRunId, { useTimeline: Boolean(timelineProp?.run.id === targetRunId) })
         if (cancelled) return
       } catch (err) {
         if (!cancelled) {
@@ -337,7 +352,7 @@ export default function PipelineChatPanel({ runId: runIdProp, embedded, onReques
     return () => {
       cancelled = true
     }
-  }, [isDemoMode, runId])
+  }, [isDemoMode, runId, timelineProp?.run.id, timelineProp?.run.updatedAt, timelineProp?.agentRuns.length, timelineProp?.artifacts.length])
 
   const handleQuickAction = (text: string) => {
     setInput(text)
@@ -383,7 +398,7 @@ export default function PipelineChatPanel({ runId: runIdProp, embedded, onReques
       const session = await sendSessionMessage(sessionId, payload)
       setChatMessages(mapSessionMessages(session.messages))
       if (current?.run?.id) {
-        await reloadRunContext(current.run.id)
+        await reloadRunContext(current.run.id, { forceDiff: true, useTimeline: Boolean(timelineProp?.run.id === current.run.id) })
       }
     } catch (err) {
       message.error(err instanceof Error ? err.message : '发送消息失败')
@@ -403,9 +418,6 @@ export default function PipelineChatPanel({ runId: runIdProp, embedded, onReques
     try {
       await approveCheckpoint(checkpointId, '通过右侧聊天面板审批通过')
       message.success('已通过审批，流水线继续执行')
-      if (current?.run?.id) {
-        await reloadRunContext(current.run.id)
-      }
       onTimelineDirty?.()
       setCollapsed(true)
     } catch (err) {
@@ -426,9 +438,6 @@ export default function PipelineChatPanel({ runId: runIdProp, embedded, onReques
     try {
       await rejectCheckpoint(checkpointId, '')
       message.success('已驳回审批，流水线将回退重做')
-      if (current?.run?.id) {
-        await reloadRunContext(current.run.id)
-      }
       onTimelineDirty?.()
       setCollapsed(true)
     } catch (err) {
@@ -439,7 +448,7 @@ export default function PipelineChatPanel({ runId: runIdProp, embedded, onReques
   }
 
   return (
-    <div className={`fixed right-0 top-0 z-40 h-screen border-l border-slate-200 bg-white shadow-xl transition-all duration-200 ${collapsed ? 'w-12' : 'w-[420px]'}`}>
+    <div className={`fixed right-0 top-0 z-40 h-screen border-l border-slate-200 bg-white shadow-xl transition-all duration-200 ${collapsed ? 'w-12' : 'w-[640px]'}`}>
       <div className="flex h-full flex-col">
         <div className="flex items-center justify-between border-b border-slate-100 px-3 py-3">
           {!collapsed ? <Typography.Text strong>代码 Diff 对话</Typography.Text> : null}
@@ -486,10 +495,11 @@ export default function PipelineChatPanel({ runId: runIdProp, embedded, onReques
                       <Button
                         key={item.filePath}
                         size="small"
+                        className="max-w-[240px] text-left"
                         type={item.filePath === selectedChange?.filePath ? 'primary' : 'default'}
                         onClick={() => setSelectedDiffFile(item.filePath)}
                       >
-                        {item.filePath}
+                        <span className="block truncate">{item.filePath}</span>
                       </Button>
                     ))}
                   </div>

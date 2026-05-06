@@ -30,6 +30,16 @@ import {
 } from '../lib/pipeline'
 
 const sidebarWidth = 80
+const stageDescriptions: Record<string, string> = {
+  requirement_analysis: '理解自然语言需求，沉淀结构化范围、约束和验收口径',
+  solution_design: '生成技术方案、接口影响、风险和实施计划',
+  checkpoint_design: '人工确认方案是否可进入实现',
+  code_generation: '基于方案生成代码变更计划和结构化 diff',
+  test_generation: '生成或补齐测试用例，形成验证建议',
+  code_review: '从安全、可维护性和性能角度审查变更',
+  checkpoint_review: '人工查看 diff 并决定 Resolve / Reject',
+  delivery: '创建交付草稿、分支、提交和 PR/MR 摘要',
+}
 
 /** 地址栏与 Router 解析有时不同步，两处任一命中 ?chatDemo=1 即视为 Mock */
 function useWorkflowChatDemoFlag(): boolean {
@@ -622,6 +632,7 @@ export default function Workflows() {
       {showCodeDiffChat && approvalChatOpen ? (
         <PipelineChatPanel
           runId={timeline?.run?.id ?? selectedRunId}
+          timeline={timeline}
           embedded
           onRequestClose={() => setApprovalChatOpen(false)}
           onTimelineDirty={() => void refreshAll()}
@@ -758,7 +769,7 @@ function PipelineRail({ stages, currentStageKey, loading }: { stages: PipelineRu
                     : 'border-outline-variant bg-surface-container-high text-on-surface-variant'
             return (
               <div key={stage.id} className="flex items-center">
-                <div className={`w-36 rounded-lg border px-3 py-2 ${active ? 'border-primary bg-primary/5' : 'border-outline-variant bg-white'}`}>
+                <div className={`w-48 rounded-lg border px-3 py-2 ${active ? 'border-primary bg-primary/5' : 'border-outline-variant bg-white'}`}>
                   <div className="flex items-center gap-2">
                     <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-xs font-semibold ${dotClass}`}>
                       {stage.status === 'running' ? <SyncOutlined spin /> : index + 1}
@@ -767,6 +778,9 @@ function PipelineRail({ stages, currentStageKey, loading }: { stages: PipelineRu
                       <div className="truncate text-xs font-semibold text-on-surface">{stageLabel(stage.stageKey)}</div>
                       <div className="truncate text-[11px] text-on-surface-variant">attempt {stage.attempt}</div>
                     </div>
+                  </div>
+                  <div className="mt-2 line-clamp-2 min-h-8 text-[11px] leading-4 text-on-surface-variant">
+                    {stageDescriptions[stage.stageKey] || stage.stageType}
                   </div>
                   <Tag className="!mt-2" color={meta.color}>{meta.label}</Tag>
                 </div>
@@ -791,7 +805,12 @@ function StageRow({ stage, active }: { stage: PipelineRunTimeline['stages'][numb
       </div>
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-semibold text-on-surface">{stageLabel(stage.stageKey)}</div>
-        <div className="truncate text-xs text-on-surface-variant">{stage.stageKey} · attempt {stage.attempt}</div>
+        <div className="mt-0.5 line-clamp-2 text-xs text-on-surface-variant">
+          {stageDescriptions[stage.stageKey] || stage.stageType}
+        </div>
+        <div className="mt-1 truncate text-[11px] text-on-surface-variant">
+          {stage.stageKey} · attempt {stage.attempt} · {formatDateTime(stage.startedAt)} - {formatDateTime(stage.finishedAt)}
+        </div>
       </div>
       <Tag color={meta.color}>{meta.label}</Tag>
     </div>

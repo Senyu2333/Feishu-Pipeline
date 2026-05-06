@@ -238,6 +238,19 @@ export async function fetchCodeDiff(runId: string): Promise<CodeDiffResponse> {
   return request<CodeDiffResponse>(`/api/pipeline-runs/${runId}/code-diff`)
 }
 
+const codeDiffCache = new Map<string, { data: CodeDiffResponse; expiresAt: number }>()
+const CODE_DIFF_CACHE_TTL = 30_000
+
+export async function fetchCodeDiffCached(runId: string, force = false): Promise<CodeDiffResponse> {
+  const cached = codeDiffCache.get(runId)
+  if (!force && cached && cached.expiresAt > Date.now()) {
+    return cached.data
+  }
+  const data = await fetchCodeDiff(runId)
+  codeDiffCache.set(runId, { data, expiresAt: Date.now() + CODE_DIFF_CACHE_TTL })
+  return data
+}
+
 export interface SessionMessage {
   id: string
   sessionId: string

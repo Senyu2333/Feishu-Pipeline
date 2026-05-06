@@ -39,11 +39,15 @@ func NewAuthController(authService *service.AuthService, cookieName string, cook
 // @produce application/json
 func (c *AuthController) GitHubConfig(ctx *gin.Context) {
 	clientID := c.authService.GitHubClientID()
+	redirectURI := c.authService.GitHubRedirectURI()
+	if redirectURI == "" {
+		redirectURI = c.GitHubCallbackURL()
+	}
 	writeSuccess(ctx, http.StatusOK, map[string]interface{}{
-		"enabled":    clientID != "",
-		"clientId":   clientID,
+		"enabled":      clientID != "",
+		"clientId":     clientID,
 		"authorizeUrl": "https://github.com/login/oauth/authorize",
-		"callbackUrl": "/api/auth/github/callback",
+		"callbackUrl":  redirectURI,
 	})
 }
 

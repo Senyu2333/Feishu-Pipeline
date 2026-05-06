@@ -15,7 +15,10 @@
 - [x] Workflows 在存在代码变更上下文时展示 Diff 对话入口，不再只依赖审批 checkpoint
 - [x] Workflows 增加横向执行轨道，强化流水线阶段可视化
 - [x] Diff 对话优先展示结构化 `code_diff` 产物，并保留 AgentRun diff 兜底
+- [x] Diff 对话复用 Workflows timeline 并缓存 `code-diff`，避免反复请求慢 `/current` 接口
+- [x] GitHub 绑定改为读取后端 OAuth 配置，移除前端硬编码 clientId
 - [ ] 真实飞书租户 smoke：docx 创建与消息送达
+- [ ] 真实 GitHub OAuth App smoke：账号绑定、仓库列表、分支列表
 - [ ] 真实演示 smoke：Pipeline 自动流转到首个 checkpoint
 
 ## 参考文件

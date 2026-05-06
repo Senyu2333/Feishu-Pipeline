@@ -26,6 +26,7 @@ func New(deps Dependencies) *gin.Engine {
 
 	engine.GET("/api/health", deps.HealthController.Health)
 	engine.GET("/api/auth/feishu/config", deps.AuthController.FeishuConfig)
+	engine.GET("/api/auth/github/config", deps.AuthController.GitHubConfig)
 	engine.POST("/api/auth/feishu/sso/login", deps.AuthController.SSOLogin)
 	engine.POST("/api/auth/github/login", deps.AuthController.GitHubLogin)
 	engine.GET("/api/auth/github/authorize", deps.AuthController.GitHubAuthorize)

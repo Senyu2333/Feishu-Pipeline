@@ -74,9 +74,9 @@ func stringValue(ptr *string, defaultValue string) string {
 }
 
 type AuthService struct {
-	repository    *repo.Repository
-	feishuClient  *feishu.Client
-	sessionTTL    time.Duration
+	repository         *repo.Repository
+	feishuClient       *feishu.Client
+	sessionTTL         time.Duration
 	githubClientID     string
 	githubClientSecret string
 	githubRedirectURI  string
@@ -92,12 +92,12 @@ func NewAuthService(repository *repo.Repository, feishuClient *feishu.Client, se
 
 func NewAuthServiceWithGitHub(repository *repo.Repository, feishuClient *feishu.Client, sessionTTL time.Duration, githubClientID, githubClientSecret, githubRedirectURI string) *AuthService {
 	return &AuthService{
-		repository:        repository,
-		feishuClient:      feishuClient,
-		sessionTTL:        sessionTTL,
-		githubClientID:    githubClientID,
+		repository:         repository,
+		feishuClient:       feishuClient,
+		sessionTTL:         sessionTTL,
+		githubClientID:     githubClientID,
 		githubClientSecret: githubClientSecret,
-		githubRedirectURI: githubRedirectURI,
+		githubRedirectURI:  githubRedirectURI,
 	}
 }
 
@@ -115,6 +115,10 @@ func (s *AuthService) FeishuOAuthScope() string {
 
 func (s *AuthService) GitHubClientID() string {
 	return s.githubClientID
+}
+
+func (s *AuthService) GitHubRedirectURI() string {
+	return s.githubRedirectURI
 }
 
 // 直接通过 GitHub 用户信息创建会话（TS后端验证后调用）
@@ -286,11 +290,11 @@ type githubTokenResponse struct {
 }
 
 type GitHubRepo struct {
-	ID       int64  `json:"id"`
-	Name     string `json:"name"`
-	FullName string `json:"full_name"`
-	Private  bool   `json:"private"`
-	HTMLURL  string `json:"html_url"`
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	FullName    string `json:"full_name"`
+	Private     bool   `json:"private"`
+	HTMLURL     string `json:"html_url"`
 	Description string `json:"description"`
 }
 
@@ -692,7 +696,7 @@ func (s *AuthService) createDefaultBranch(ctx context.Context, token string, own
 
 func (s *AuthService) exchangeGitHubCode(code string) (*githubTokenResponse, error) {
 	log.Printf("[GitHub OAuth] Exchanging code: client_id=%s, redirect_uri=%s", s.githubClientID, s.githubRedirectURI)
-	
+
 	data := url.Values{}
 	data.Set("client_id", s.githubClientID)
 	data.Set("client_secret", s.githubClientSecret)
@@ -714,7 +718,7 @@ func (s *AuthService) exchangeGitHubCode(code string) (*githubTokenResponse, err
 		return nil, err
 	}
 	defer resp.Body.Close()
-	
+
 	log.Printf("[GitHub OAuth] Response status: %d", resp.StatusCode)
 
 	body, err := io.ReadAll(resp.Body)
@@ -722,7 +726,7 @@ func (s *AuthService) exchangeGitHubCode(code string) (*githubTokenResponse, err
 		log.Printf("[GitHub OAuth] Failed to read response body: %v", err)
 		return nil, err
 	}
-	
+
 	log.Printf("[GitHub OAuth] Response body: %s", string(body))
 
 	var result githubTokenResponse
@@ -1102,16 +1106,16 @@ type FeishuCardCallbackRequest struct {
 			Intent string `json:"intent"` // approve / reject
 		} `json:"input"`
 		Message struct {
-			MessageID string `json:"message_id"`
-			RootID    string `json:"root_id"`
-			ParentID  string `json:"parent_id"`
+			MessageID  string `json:"message_id"`
+			RootID     string `json:"root_id"`
+			ParentID   string `json:"parent_id"`
 			CreateTime string `json:"create_time"`
-			ChatID    string `json:"chat_id"`
-			Sender    struct {
+			ChatID     string `json:"chat_id"`
+			Sender     struct {
 				SenderID struct {
-					OpenID   string `json:"open_id"`
-					UserID   string `json:"user_id"`
-					UnionID  string `json:"union_id"`
+					OpenID  string `json:"open_id"`
+					UserID  string `json:"user_id"`
+					UnionID string `json:"union_id"`
 				} `json:"sender_id"`
 			} `json:"sender"`
 		} `json:"message"`

@@ -230,17 +230,23 @@ export default function Sidebar({ convCollapsed = false, onConvCollapse }: Sideb
     }
   }
 
-  // 绑定 GitHub - 前端直接跳转 GitHub 授权，回调到前端页面
+  // 绑定 GitHub - 使用后端 OAuth 配置，避免前端硬编码 client_id 导致授权失败
   const handleBindGitHub = async () => {
     try {
-      const clientId = 'Ov23ligSIYJehzkAIv5R'
-      const redirectUri = `${window.location.origin}/auth/callback`
       const state = Math.random().toString(36).substring(2)
+      const res = await fetch('/api/auth/github/config', { credentials: 'include' })
+      const payload = await res.json().catch(() => ({}))
+      if (!res.ok || !payload.data?.enabled) {
+        message.error(payload.error || 'GitHub OAuth 未配置，请先配置后端 client_id/client_secret')
+        return
+      }
+
       sessionStorage.setItem('github_bind_mode', 'true')
       sessionStorage.setItem('github_auth_state', state)
 
-      // 构建 GitHub 授权 URL，回调到前端 AuthCallback 页面
-      const authUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=read:user,user:email,repo&state=${state}`
+      const config = payload.data
+      const callbackUrl = config.callbackUrl || `${window.location.origin}/auth/callback`
+      const authUrl = `${config.authorizeUrl}?client_id=${encodeURIComponent(config.clientId)}&redirect_uri=${encodeURIComponent(callbackUrl)}&scope=read:user,user:email,repo&state=${encodeURIComponent(state)}`
       window.location.href = authUrl
     } catch (err) {
       console.error('绑定 GitHub 失败:', err)

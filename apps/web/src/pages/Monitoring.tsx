@@ -15,6 +15,11 @@ import {
   Input,
   Select,
   Table,
+  Tabs,
+  Statistic,
+  Row,
+  Col,
+  Radio,
 } from 'antd'
 import {
   PlusOutlined,
@@ -134,6 +139,54 @@ export default function Monitoring() {
   } | null>(null)
   const [showChangeSet, setShowChangeSet] = useState(false)
   const [executingChanges, setExecutingChanges] = useState(false)
+
+  // 统计面板相关状态
+  const [activeTab, setActiveTab] = useState<'monitor' | 'statistics'>('monitor')
+  const [statisticsLoading, setStatisticsLoading] = useState(false)
+  const [timeRange, setTimeRange] = useState<'today' | '7d' | '30d'>('7d')
+  const [overviewData, setOverviewData] = useState<any>(null)
+  const [trendsData, setTrendsData] = useState<any>(null)
+  const [stagesData, setStagesData] = useState<any>(null)
+  const [agentsData, setAgentsData] = useState<any>(null)
+
+  // 加载统计数据
+  const loadStatistics = async () => {
+    setStatisticsLoading(true)
+    try {
+      // 加载概览数据
+      const overviewRes = await fetch(`${API_BASE}/pipeline/statistics/overview`)
+      if (overviewRes.ok) {
+        const overview = await overviewRes.json()
+        setOverviewData(overview.data)
+      }
+
+      // 加载趋势数据
+      const trendsRes = await fetch(`${API_BASE}/pipeline/statistics/trends?timeRange=${timeRange}`)
+      if (trendsRes.ok) {
+        const trends = await trendsRes.json()
+        setTrendsData(trends.data)
+      }
+
+      // 加载阶段统计
+      const stagesRes = await fetch(`${API_BASE}/pipeline/statistics/stages`)
+      if (stagesRes.ok) {
+        const stages = await stagesRes.json()
+        setStagesData(stages.data)
+      }
+
+      // 加载Agent统计
+      const agentsRes = await fetch(`${API_BASE}/pipeline/statistics/agents`)
+      if (agentsRes.ok) {
+        const agents = await agentsRes.json()
+        setAgentsData(agents.data)
+      }
+    } catch (err) {
+      console.error('加载统计数据失败:', err)
+      message.error('加载统计数据失败')
+    } finally {
+      setStatisticsLoading(false)
+    }
+  }
   
   // 处理 URL 参数自动打开审批弹窗
   useEffect(() => {
@@ -458,6 +511,13 @@ export default function Monitoring() {
     loadTemplates()
   }, [])
 
+  // 切换到统计页时自动加载数据，时间范围变化时重新加载
+  useEffect(() => {
+    if (activeTab === 'statistics') {
+      loadStatistics()
+    }
+  }, [activeTab, timeRange])
+
   // 格式化耗时
   const formatDuration = (ms?: number) => {
     if (!ms) return '--'
@@ -494,28 +554,47 @@ export default function Monitoring() {
             <h1 className="text-2xl font-bold text-on-surface m-0">Pipeline Status Monitor</h1>
           </div>
           <Space>
-            <Button 
-              type="primary" 
-              icon={<PlusOutlined />} 
-              size="large" 
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              size="large"
               className="!rounded-lg"
               onClick={() => setCreateModalVisible(true)}
             >
               创建流水线
             </Button>
-            <Button 
-              icon={<ReloadOutlined />} 
-              size="large" 
+            <Button
+              icon={<ReloadOutlined />}
+              size="large"
               className="!rounded-lg"
-              onClick={loadPipelines}
-              loading={loading}
+              onClick={activeTab === 'monitor' ? loadPipelines : loadStatistics}
+              loading={activeTab === 'monitor' ? loading : statisticsLoading}
             >
               刷新
             </Button>
           </Space>
         </div>
 
-        <div className="grid grid-cols-[320px_1fr] gap-5">
+        {/* Tab切换 */}
+        <Tabs
+          activeKey={activeTab}
+          onChange={(key) => setActiveTab(key as 'monitor' | 'statistics')}
+          className="mb-5"
+          items={[
+            {
+              key: 'monitor',
+              label: '流水线监控',
+            },
+            {
+              key: 'statistics',
+              label: '统计分析',
+            },
+          ]}
+        />
+
+        {/* 监控页内容 */}
+        {activeTab === 'monitor' && (
+          <div className="grid grid-cols-[320px_1fr] gap-5">
           {/* 左侧流水线列表 */}
           <Card className="!rounded-xl !shadow-sm" title={<span className="text-xs font-bold text-on-surface-variant tracking-wider">流水线列表</span>}>
             {loading ? (
@@ -727,6 +806,196 @@ export default function Monitoring() {
             )}
           </div>
         </div>
+        )}
+
+        {/* 统计页内容 */}
+        {activeTab === 'statistics' && (
+          <div className="space-y-5">
+            {/* 时间范围选择 */}
+            <Card className="!rounded-xl !shadow-sm">
+              <div className="flex justify-between items-center">
+                <div className="font-semibold text-on-surface">统计时间范围</div>
+                <Radio.Group
+                  value={timeRange}
+                  onChange={(e) => setTimeRange(e.target.value)}
+                  buttonStyle="solid"
+                >
+                  <Radio.Button value="today">今日</Radio.Button>
+                  <Radio.Button value="7d">近7天</Radio.Button>
+                  <Radio.Button value="30d">近30天</Radio.Button>
+                </Radio.Group>
+              </div>
+            </Card>
+
+            {statisticsLoading ? (
+              <div className="flex justify-center py-16">
+                <Spin size="large" />
+              </div>
+            ) : (
+              <>
+                {/* 统计概览卡片 */}
+                <Row gutter={[16, 16]}>
+                  <Col span={6}>
+                    <Card className="!rounded-xl !shadow-sm">
+                      <Statistic
+                        title="总流水线数"
+                        value={overviewData?.totalRuns || 0}
+                        valueStyle={{ color: '#1890ff' }}
+                      />
+                    </Card>
+                  </Col>
+                  <Col span={6}>
+                    <Card className="!rounded-xl !shadow-sm">
+                      <Statistic
+                        title="成功率"
+                        value={overviewData?.successRate || 0}
+                        precision={1}
+                        suffix="%"
+                        valueStyle={{ color: '#52c41a' }}
+                      />
+                    </Card>
+                  </Col>
+                  <Col span={6}>
+                    <Card className="!rounded-xl !shadow-sm">
+                      <Statistic
+                        title="平均运行时长"
+                        value={formatDuration(overviewData?.averageDurationMs || 0)}
+                        valueStyle={{ color: '#722ed1' }}
+                      />
+                    </Card>
+                  </Col>
+                  <Col span={6}>
+                    <Card className="!rounded-xl !shadow-sm">
+                      <Statistic
+                        title="总Token消耗"
+                        value={overviewData?.totalTokens || 0}
+                        valueStyle={{ color: '#fa8c16' }}
+                      />
+                    </Card>
+                  </Col>
+                </Row>
+
+                {/* 趋势图表区域 */}
+                <Card
+                  className="!rounded-xl !shadow-sm"
+                  title={<span className="font-semibold text-on-surface">运行趋势</span>}
+                >
+                  {trendsData?.length ? (
+                    <div className="h-64 flex items-center justify-center text-on-surface-variant">
+                      趋势图表组件开发中...
+                    </div>
+                  ) : (
+                    <div className="h-64 flex items-center justify-center text-on-surface-variant">
+                      暂无趋势数据
+                    </div>
+                  )}
+                </Card>
+
+                {/* 阶段性能分析 */}
+                <Card
+                  className="!rounded-xl !shadow-sm"
+                  title={<span className="font-semibold text-on-surface">阶段性能分析</span>}
+                >
+                  {stagesData?.length ? (
+                    <Table
+                      dataSource={stagesData.map((stage: any, idx: number) => ({ ...stage, key: idx }))}
+                      columns={[
+                        {
+                          title: '阶段名称',
+                          dataIndex: 'stageKey',
+                          key: 'stageKey',
+                          render: (key: string) => stageNameMap[key] || key,
+                        },
+                        {
+                          title: '执行次数',
+                          dataIndex: 'totalRuns',
+                          key: 'totalRuns',
+                          align: 'center',
+                        },
+                        {
+                          title: '成功率',
+                          dataIndex: 'successRate',
+                          key: 'successRate',
+                          align: 'center',
+                          render: (rate: number) => `${rate.toFixed(1)}%`,
+                        },
+                        {
+                          title: '平均耗时',
+                          dataIndex: 'averageDurationMs',
+                          key: 'averageDurationMs',
+                          align: 'center',
+                          render: (ms: number) => formatDuration(ms),
+                        },
+                        {
+                          title: '总耗时',
+                          dataIndex: 'totalDurationMs',
+                          key: 'totalDurationMs',
+                          align: 'center',
+                          render: (ms: number) => formatDuration(ms),
+                        },
+                      ]}
+                      pagination={false}
+                    />
+                  ) : (
+                    <div className="h-48 flex items-center justify-center text-on-surface-variant">
+                      暂无阶段数据
+                    </div>
+                  )}
+                </Card>
+
+                {/* Agent统计 */}
+                <Card
+                  className="!rounded-xl !shadow-sm"
+                  title={<span className="font-semibold text-on-surface">Agent运行统计</span>}
+                >
+                  {agentsData?.length ? (
+                    <Table
+                      dataSource={agentsData.map((agent: any, idx: number) => ({ ...agent, key: idx }))}
+                      columns={[
+                        {
+                          title: 'Agent名称',
+                          dataIndex: 'agentName',
+                          key: 'agentName',
+                        },
+                        {
+                          title: '调用次数',
+                          dataIndex: 'totalCalls',
+                          key: 'totalCalls',
+                          align: 'center',
+                        },
+                        {
+                          title: '成功率',
+                          dataIndex: 'successRate',
+                          key: 'successRate',
+                          align: 'center',
+                          render: (rate: number) => `${rate.toFixed(1)}%`,
+                        },
+                        {
+                          title: '总Token消耗',
+                          dataIndex: 'totalTokens',
+                          key: 'totalTokens',
+                          align: 'center',
+                        },
+                        {
+                          title: '平均耗时',
+                          dataIndex: 'averageDurationMs',
+                          key: 'averageDurationMs',
+                          align: 'center',
+                          render: (ms: number) => formatDuration(ms),
+                        },
+                      ]}
+                      pagination={false}
+                    />
+                  ) : (
+                    <div className="h-48 flex items-center justify-center text-on-surface-variant">
+                      暂无Agent数据
+                    </div>
+                  )}
+                </Card>
+              </>
+            )}
+          </div>
+        )}
 
         {/* 创建流水线弹窗 */}
         <Modal

@@ -42,6 +42,11 @@ type Repository struct {
 	db *gorm.DB
 }
 
+// DB 获取数据库实例
+func (r *Repository) DB() *gorm.DB {
+	return r.db
+}
+
 func NewSQLiteRepository(databasePath string) (*Repository, error) {
 	if err := os.MkdirAll(filepath.Dir(databasePath), 0o755); err != nil {
 		return nil, fmt.Errorf("create database dir: %w", err)
@@ -852,4 +857,270 @@ func (r *Repository) CountTasksBySessionID(ctx context.Context, sessionID string
 	var count int64
 	err := r.db.WithContext(ctx).Model(&model.Task{}).Where("session_id = ?", sessionID).Count(&count).Error
 	return count, err
+}
+
+// ==================== 统计相关方法 ====================
+
+// PipelineStatisticsResult Pipeline统计结果
+type PipelineStatisticsResult struct {
+	TotalRuns       int64
+	SuccessRuns     int64
+	FailedRuns      int64
+	RunningRuns     int64
+	TotalDurationMS int64
+}
+
+// GetPipelineStatistics 获取Pipeline概览统计
+func (r *Repository) GetPipelineStatistics(ctx context.Context, startTime *time.Time, endTime *time.Time) (PipelineStatisticsResult, error) {
+	var result PipelineStatisticsResult
+	query := r.db.WithContext(ctx).Model(&model.PipelineRun{})
+
+	if startTime != nil {
+		query = query.Where("created_at >= ?", *startTime)
+	}
+	if endTime != nil {
+		query = query.Where("created_at <= ?", *endTime)
+	}
+
+	// 总数量
+	if err := query.Count(&result.TotalRuns).Error; err != nil {
+		return result, err
+	}
+
+	// 成功数量
+	if err := query.Where("status = ?", model.PipelineRunCompleted).Count(&result.SuccessRuns).Error; err != nil {
+		return result, err
+	}
+
+	// 失败数量
+	if err := query.Where("status = ?", model.PipelineRunFailed).Count(&result.FailedRuns).Error; err != nil {
+		return result, err
+	}
+
+	// 运行中数量
+	if err := query.Where("status IN ?", []model.PipelineRunStatus{model.PipelineRunRunning, model.PipelineRunQueued, model.PipelineRunPaused}).Count(&result.RunningRuns).Error; err != nil {
+		return result, err
+	}
+
+	// 总耗时（只计算已完成的）
+	var runs []model.PipelineRun
+	if err := query.Where("status = ?", model.PipelineRunCompleted).Find(&runs).Error; err != nil {
+		return result, err
+	}
+
+	for _, run := range runs {
+		if run.StartedAt != nil && run.FinishedAt != nil {
+			result.TotalDurationMS += run.FinishedAt.Sub(*run.StartedAt).Milliseconds()
+		}
+	}
+
+	return result, nil
+}
+
+// PipelineTrendItem Pipeline趋势统计项
+type PipelineTrendItem struct {
+	Date          string
+	TotalRuns     int64
+	SuccessRuns   int64
+	FailedRuns    int64
+	TokenUsage    int64
+	AvgDurationMS int64
+}
+
+// GetPipelineTrends 获取Pipeline趋势统计
+func (r *Repository) GetPipelineTrends(ctx context.Context, startTime time.Time, endTime time.Time) ([]PipelineTrendItem, error) {
+	// 按日期分组统计
+	rows, err := r.db.WithContext(ctx).Raw(`
+		SELECT
+			DATE(created_at) as date,
+			COUNT(*) as total_runs,
+			SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as success_runs,
+			SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_runs
+		FROM pipeline_runs
+		WHERE created_at >= ? AND created_at <= ?
+		GROUP BY DATE(created_at)
+		ORDER BY date ASC
+	`, startTime, endTime).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []PipelineTrendItem
+	for rows.Next() {
+		var item PipelineTrendItem
+		if err := rows.Scan(&item.Date, &item.TotalRuns, &item.SuccessRuns, &item.FailedRuns); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+
+	// 补充Token消耗和平均时长
+	for i, item := range items {
+		dateStart, _ := time.Parse("2006-01-02", item.Date)
+		dateEnd := dateStart.AddDate(0, 0, 1)
+
+		// 统计该日期的Token消耗
+		var tokenUsage int64
+		err := r.db.WithContext(ctx).Raw(`
+			SELECT COALESCE(SUM(CAST(json_extract(token_usage_json, '$.totalTokens') AS INTEGER)), 0)
+			FROM agent_runs
+			WHERE created_at >= ? AND created_at <= ?
+			AND parent_agent_run_id = '' -- 只统计父Agent，避免重复计算
+		`, dateStart, dateEnd).Scan(&tokenUsage).Error
+		if err != nil {
+			tokenUsage = 0
+		}
+		items[i].TokenUsage = tokenUsage
+
+		// 统计该日期的平均时长
+		var avgDuration float64
+		err = r.db.WithContext(ctx).Raw(`
+			SELECT COALESCE(AVG(strftime('%s', finished_at) - strftime('%s', started_at)) * 1000, 0)
+			FROM pipeline_runs
+			WHERE created_at >= ? AND created_at <= ?
+			AND status = 'completed'
+			AND started_at IS NOT NULL
+			AND finished_at IS NOT NULL
+		`, dateStart, dateEnd).Scan(&avgDuration).Error
+		if err != nil {
+			avgDuration = 0
+		}
+		items[i].AvgDurationMS = int64(avgDuration)
+	}
+
+	return items, nil
+}
+
+// StageStatisticsItem 阶段统计项
+type StageStatisticsItem struct {
+	StageKey        string
+	TotalRuns       int64
+	SuccessRuns     int64
+	FailedRuns      int64
+	TotalDurationMS int64
+}
+
+// GetStageStatistics 获取阶段统计
+func (r *Repository) GetStageStatistics(ctx context.Context) ([]StageStatisticsItem, error) {
+	rows, err := r.db.WithContext(ctx).Raw(`
+		SELECT
+			stage_key,
+			COUNT(*) as total_runs,
+			SUM(CASE WHEN status = 'succeeded' THEN 1 ELSE 0 END) as success_runs,
+			SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_runs,
+			COALESCE(SUM(strftime('%s', finished_at) - strftime('%s', started_at)) * 1000, 0) as total_duration_ms
+		FROM stage_runs
+		WHERE started_at IS NOT NULL
+		AND finished_at IS NOT NULL
+		GROUP BY stage_key
+	`).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []StageStatisticsItem
+	for rows.Next() {
+		var item StageStatisticsItem
+		if err := rows.Scan(&item.StageKey, &item.TotalRuns, &item.SuccessRuns, &item.FailedRuns, &item.TotalDurationMS); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+
+	return items, nil
+}
+
+// AgentStatisticsResult Agent统计结果
+type AgentStatisticsResult struct {
+	AgentKey        string
+	TotalCalls      int64
+	SuccessCalls    int64
+	FailedCalls     int64
+	TotalLatencyMS  int64
+	TotalTokenUsage int64
+}
+
+// GetAgentStatistics 获取Agent统计
+func (r *Repository) GetAgentStatistics(ctx context.Context) ([]AgentStatisticsResult, error) {
+	rows, err := r.db.WithContext(ctx).Raw(`
+		SELECT
+			agent_key,
+			COUNT(*) as total_calls,
+			SUM(CASE WHEN status = 'succeeded' THEN 1 ELSE 0 END) as success_calls,
+			SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_calls,
+			COALESCE(SUM(latency_ms), 0) as total_latency_ms,
+			COALESCE(SUM(CAST(json_extract(token_usage_json, '$.totalTokens') AS INTEGER)), 0) as total_token_usage
+		FROM agent_runs
+		WHERE parent_agent_run_id = '' -- 只统计父Agent
+		GROUP BY agent_key
+	`).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []AgentStatisticsResult
+	for rows.Next() {
+		var item AgentStatisticsResult
+		if err := rows.Scan(&item.AgentKey, &item.TotalCalls, &item.SuccessCalls, &item.FailedCalls, &item.TotalLatencyMS, &item.TotalTokenUsage); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+
+	return items, nil
+}
+
+// ModelStatisticsResult 模型统计结果
+type ModelStatisticsResult struct {
+	Model           string
+	TotalCalls      int64
+	TotalTokenUsage int64
+}
+
+// GetModelStatistics 获取模型统计
+func (r *Repository) GetModelStatistics(ctx context.Context) ([]ModelStatisticsResult, error) {
+	rows, err := r.db.WithContext(ctx).Raw(`
+		SELECT
+			model,
+			COUNT(*) as total_calls,
+			COALESCE(SUM(CAST(json_extract(token_usage_json, '$.totalTokens') AS INTEGER)), 0) as total_token_usage
+		FROM agent_runs
+		WHERE model != ''
+		AND parent_agent_run_id = '' -- 只统计父Agent
+		GROUP BY model
+	`).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []ModelStatisticsResult
+	for rows.Next() {
+		var item ModelStatisticsResult
+		if err := rows.Scan(&item.Model, &item.TotalCalls, &item.TotalTokenUsage); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+
+	return items, nil
+}
+
+// GetTotalTokenUsage 获取总Token消耗
+func (r *Repository) GetTotalTokenUsage(ctx context.Context, startTime *time.Time, endTime *time.Time) (int64, error) {
+	var total int64
+	query := r.db.WithContext(ctx).Model(&model.AgentRun{}).Where("parent_agent_run_id = ''") // 只统计父Agent
+
+	if startTime != nil {
+		query = query.Where("created_at >= ?", *startTime)
+	}
+	if endTime != nil {
+		query = query.Where("created_at <= ?", *endTime)
+	}
+
+	err := query.Select("COALESCE(SUM(CAST(json_extract(token_usage_json, '$.totalTokens') AS INTEGER)), 0)").Scan(&total).Error
+	return total, err
 }

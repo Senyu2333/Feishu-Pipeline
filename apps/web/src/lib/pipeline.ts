@@ -119,6 +119,22 @@ export interface GitDelivery {
   updatedAt: string
 }
 
+export interface ChangeItem {
+  filePath: string
+  changeType: 'modify' | 'create' | 'delete'
+  reason: string
+  originalContent: string
+  proposedPatch: string
+  proposedDiff: string
+  contextIncluded: boolean
+}
+
+export interface CodeDiffResponse {
+  changeSet: ChangeItem[]
+  summary: string
+  updatedAt: string
+}
+
 export interface PipelineRunSummary {
   totalStages: number
   completedStages: number
@@ -151,22 +167,6 @@ export interface PipelineRunTimeline {
   agentRuns: AgentRun[]
   deliveries: GitDelivery[]
   summary: PipelineRunSummary
-}
-
-export interface SessionMessage {
-  id: string
-  role: 'user' | 'assistant' | 'system'
-  content: string
-  createdAt: string
-}
-
-export interface SessionDetail {
-  session: {
-    id: string
-    title: string
-    status: string
-  }
-  messages: SessionMessage[]
 }
 
 interface Envelope<T> {
@@ -218,6 +218,10 @@ export async function fetchGitDelivery(deliveryId: string): Promise<GitDelivery>
 export async function fetchPipelineAgentRuns(runId: string): Promise<AgentRun[]> {
   const data = await request<{ agentRuns: AgentRun[] }>(`/api/pipeline-runs/${runId}/agent-runs`)
   return data.agentRuns
+}
+
+export async function fetchCodeDiff(runId: string): Promise<CodeDiffResponse> {
+  return request<CodeDiffResponse>(`/api/pipeline-runs/${runId}/code-diff`)
 }
 
 export interface SessionMessage {

@@ -39,6 +39,16 @@ export interface PipelineRun {
   updatedAt: string
 }
 
+export interface PipelineTemplate {
+  id: string
+  name: string
+  description: string
+  version: string
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
 export interface StageRun {
   id: string
   pipelineRunId: string
@@ -193,8 +203,40 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return payload.data
 }
 
+/** 与后端 pipeline.DefaultTemplateID 一致 */
+export const DEFAULT_PIPELINE_TEMPLATE_ID = 'feature-delivery'
+
+export interface PipelineRunDetail {
+  run: PipelineRun
+  stages: StageRun[]
+  artifacts: Artifact[]
+  checkpoints: Checkpoint[]
+}
+
+/** 将会话消息汇总为需求并创建 PipelineRun（后端不自动启动，需再调 start） */
+export async function createPipelineRunFromSession(input: {
+  sessionId: string
+  templateId?: string
+  targetRepo?: string
+  targetBranch?: string
+}): Promise<PipelineRunDetail> {
+  return request<PipelineRunDetail>('/api/pipeline-runs/from-session', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: input.sessionId,
+      templateId: input.templateId ?? '',
+      targetRepo: input.targetRepo ?? 'self',
+      targetBranch: input.targetBranch ?? 'main',
+    }),
+  })
+}
+
 export async function fetchPipelineRuns(): Promise<PipelineRun[]> {
   return request<PipelineRun[]>('/api/pipeline-runs')
+}
+
+export async function fetchPipelineTemplates(): Promise<PipelineTemplate[]> {
+  return request<PipelineTemplate[]>('/api/pipeline-templates')
 }
 
 export async function fetchPipelineTimeline(runId: string): Promise<PipelineRunTimeline> {
@@ -222,6 +264,19 @@ export async function fetchPipelineAgentRuns(runId: string): Promise<AgentRun[]>
 
 export async function fetchCodeDiff(runId: string): Promise<CodeDiffResponse> {
   return request<CodeDiffResponse>(`/api/pipeline-runs/${runId}/code-diff`)
+}
+
+const codeDiffCache = new Map<string, { data: CodeDiffResponse; expiresAt: number }>()
+const CODE_DIFF_CACHE_TTL = 30_000
+
+export async function fetchCodeDiffCached(runId: string, force = false): Promise<CodeDiffResponse> {
+  const cached = codeDiffCache.get(runId)
+  if (!force && cached && cached.expiresAt > Date.now()) {
+    return cached.data
+  }
+  const data = await fetchCodeDiff(runId)
+  codeDiffCache.set(runId, { data, expiresAt: Date.now() + CODE_DIFF_CACHE_TTL })
+  return data
 }
 
 export interface SessionMessage {
@@ -300,6 +355,8 @@ export interface ExecuteChangesResult {
   appliedFiles: string[]
   failedFiles: { filePath: string; error: string }[]
   summary: string
+  commitSha?: string
+  prmrUrl?: string
 }
 
 export async function executeChanges(runId: string, changeSet: ChangeSetItem[], token?: string): Promise<ExecuteChangesResult> {
@@ -398,6 +455,20 @@ export function isCodeApprovalStage(timeline: PipelineRunTimeline | null): boole
   if (timeline.run.currentStageKey === 'checkpoint_review') return true
   const pending = timeline.checkpoints?.find(c => c.status === 'pending')
   return pending?.checkpointType === 'code_review'
+}
+
+export function isCodeAgentRun(agentRun?: AgentRun): boolean {
+  if (!agentRun) return false
+  return ['code_generation', 'code_review', 'code_generator', 'code_reviewer'].some(key => agentRun.agentKey.includes(key))
+}
+
+export function hasCodeDiffContext(timeline: PipelineRunTimeline | null): boolean {
+  if (!timeline) return false
+  if (isCodeApprovalStage(timeline)) return true
+  if (timeline.current?.artifact?.artifactType === 'code_diff') return true
+  if (timeline.artifacts.some(artifact => artifact.artifactType === 'code_diff')) return true
+  if (timeline.agentRuns.some(isCodeAgentRun)) return true
+  return ['code_generation', 'code_review', 'checkpoint_review'].includes(timeline.run.currentStageKey)
 }
 
 export function formatDateTime(value?: string): string {

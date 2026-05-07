@@ -169,6 +169,12 @@ func (r *Repository) FindUserByFeishuOpenID(ctx context.Context, openID string) 
 	return user, err
 }
 
+func (r *Repository) FindUserByGitHubID(ctx context.Context, githubID string) (model.User, error) {
+	var user model.User
+	err := r.db.WithContext(ctx).First(&user, "git_hub_id = ?", githubID).Error
+	return user, err
+}
+
 func (r *Repository) FindLatestUserByRole(ctx context.Context, role model.Role) (model.User, error) {
 	var user model.User
 	err := r.db.WithContext(ctx).
